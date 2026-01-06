@@ -60,13 +60,20 @@ const client = new FireberryClient({
 ### Query Records
 
 ```typescript
-// Simple query
+// Simple query - fields as array
 const result = await client.query({
   objectType: '1',
   fields: ['accountid', 'accountname'],
   query: '(statuscode = 1)',
   sortBy: 'modifiedon',
   sortType: 'desc',
+  limit: 100,
+});
+
+// Fields as comma-separated string
+const result = await client.query({
+  objectType: '1',
+  fields: 'accountid,accountname,statuscode',
   limit: 100,
 });
 
