@@ -3,7 +3,12 @@
  * These fields cause API errors when queried
  */
 export const EXCLUDED_FIELDS_FOR_STAR_QUERY: Record<string, string[]> = {
-  '7': ['deletedon', 'deletedby'], // Note object
+  '7': ['deletedon', 'deletedby'], // Note
+  '8': ['deletedon', 'deletedby'], // Competitor
+  '114': ['deletedon', 'deletedby'], // Calendar Resource
+  '115': ['deletedon', 'deletedby'], // Customer Journey
+  '116': ['deletedon', 'deletedby'], // Profile
+  '117': ['deletedon', 'deletedby'], // Landing Page
 };
 
 /**

@@ -36,14 +36,18 @@ export class RecordsAPI {
     data: FireberryRecord,
     options?: CreateOptions,
   ): Promise<FireberryRecord> {
-    const response = await this.client.request<FireberryRecord>({
+    const response = await this.client.request<{
+      success: boolean;
+      record: FireberryRecord;
+      _id?: string;
+    }>({
       method: 'POST',
       endpoint: `/api/v2/record/${objectType}`,
       body: data,
       signal: options?.signal,
     });
 
-    return response;
+    return response.record;
   }
 
   /**
@@ -68,14 +72,18 @@ export class RecordsAPI {
     data: FireberryRecord,
     options?: UpdateOptions,
   ): Promise<FireberryRecord> {
-    const response = await this.client.request<FireberryRecord>({
+    const response = await this.client.request<{
+      success: boolean;
+      record: FireberryRecord;
+      _id?: string;
+    }>({
       method: 'PUT',
       endpoint: `/api/v2/record/${objectType}/${recordId}`,
       body: data,
       signal: options?.signal,
     });
 
-    return response;
+    return response.record;
   }
 
   /**
@@ -96,9 +104,10 @@ export class RecordsAPI {
     recordId: string,
     options?: DeleteOptions,
   ): Promise<{ success: boolean; id: string }> {
+    // Note: Delete uses /api/record (not /api/v2/record)
     await this.client.request({
       method: 'DELETE',
-      endpoint: `/api/v2/record/${objectType}/${recordId}`,
+      endpoint: `/api/record/${objectType}/${recordId}`,
       signal: options?.signal,
     });
 

@@ -71,7 +71,7 @@ export class FilesAPI {
     const config = this.client.getConfig();
 
     // Build the URL
-    const url = `${config.baseUrl}/api/v2/record/${objectTypeStr}/${recordId}/files?tokenid=${config.apiKey}`;
+    const url = `${config.baseUrl}/api/v2/record/${objectTypeStr}/${recordId}/files`;
 
     // Create form data
     // Note: In Node.js, we need to construct multipart/form-data manually
@@ -100,6 +100,7 @@ export class FilesAPI {
         headers: {
           Accept: 'application/json',
           'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          tokenid: config.apiKey,
         },
         body,
         signal,

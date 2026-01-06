@@ -243,6 +243,11 @@ export class FireberryClient {
       fieldsStr = '*';
     }
 
+    // Handle '*' expansion for object types with excluded fields
+    if (fieldsStr === '*') {
+      fieldsStr = await this.expandStarFields(objectType, signal);
+    }
+
     // If autoPage is true, fetch all pages
     if (autoPage) {
       return this.queryAllPages({
@@ -353,6 +358,30 @@ export class FireberryClient {
   }
 
   /**
+   * Expands '*' fields to actual field names, excluding problematic fields for specific object types
+   */
+  private async expandStarFields(objectType: string, signal?: AbortSignal): Promise<string> {
+    const { getExcludedFieldsForStarQuery } = await import('./constants/excludedFields');
+    const excludedFields = getExcludedFieldsForStarQuery(objectType);
+
+    // If no excluded fields for this object type, just return '*'
+    if (excludedFields.length === 0) {
+      return '*';
+    }
+
+    // Fetch metadata to get all field names
+    const fieldsResult = await this.metadata.getFields(objectType, signal);
+    const allFieldNames = fieldsResult.fields.map((f) => f.fieldName);
+
+    // Filter out excluded fields
+    const filteredFields = allFieldNames.filter(
+      (fieldName) => !excludedFields.includes(fieldName),
+    );
+
+    return filteredFields.join(',');
+  }
+
+  /**
    * Makes a raw API request to the Fireberry API
    */
   async request<T = unknown>(options: RequestOptions): Promise<T> {
@@ -368,21 +397,21 @@ export class FireberryClient {
     // Build URL
     let url = `${this.config.baseUrl}${endpoint}`;
 
-    // Add query parameters
-    const params = new URLSearchParams();
-    params.set('tokenid', this.config.apiKey);
-    if (queryParams) {
+    // Add query parameters if any
+    if (queryParams && Object.keys(queryParams).length > 0) {
+      const params = new URLSearchParams();
       for (const [key, value] of Object.entries(queryParams)) {
         if (value !== undefined && value !== null) {
           params.set(key, String(value));
         }
       }
+      url += `?${params.toString()}`;
     }
-    url += `?${params.toString()}`;
 
     // Build headers
     const headers: Record<string, string> = {
       Accept: 'application/json',
+      tokenid: this.config.apiKey,
       ...customHeaders,
     };
 

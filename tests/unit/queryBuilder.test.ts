@@ -1,0 +1,311 @@
+import { describe, it, expect } from 'vitest';
+import { QueryBuilder, escapeQueryValue, sanitizeQuery } from '../../src/utils/queryBuilder';
+
+describe('escapeQueryValue', () => {
+  it('should return empty string for empty input', () => {
+    expect(escapeQueryValue('')).toBe('');
+  });
+
+  it('should escape backslashes', () => {
+    expect(escapeQueryValue('a\\b')).toBe('a\\\\b');
+  });
+
+  it('should escape parentheses', () => {
+    expect(escapeQueryValue('(test)')).toBe('\\(test\\)');
+  });
+
+  it('should escape "and" operator', () => {
+    expect(escapeQueryValue('this and that')).toBe('this \\and that');
+  });
+
+  it('should escape "or" operator', () => {
+    expect(escapeQueryValue('this or that')).toBe('this \\or that');
+  });
+
+  it('should not escape "and" within words', () => {
+    expect(escapeQueryValue('android')).toBe('android');
+    expect(escapeQueryValue('brand')).toBe('brand');
+  });
+
+  it('should not escape "or" within words', () => {
+    expect(escapeQueryValue('order')).toBe('order');
+    expect(escapeQueryValue('color')).toBe('color');
+  });
+
+  it('should handle multiple escapes', () => {
+    expect(escapeQueryValue('(a and b) or c')).toBe('\\(a \\and b\\) \\or c');
+  });
+});
+
+describe('sanitizeQuery', () => {
+  it('should return empty string for empty input', () => {
+    expect(sanitizeQuery('')).toBe('');
+  });
+
+  it('should remove empty parentheses', () => {
+    expect(sanitizeQuery('(statuscode = 1) and ()')).toBe('(statuscode = 1)');
+  });
+
+  it('should remove trailing logical operators', () => {
+    expect(sanitizeQuery('(statuscode = 1) and')).toBe('(statuscode = 1)');
+  });
+
+  it('should remove leading logical operators', () => {
+    expect(sanitizeQuery('and (statuscode = 1)')).toBe('(statuscode = 1)');
+  });
+
+  it('should collapse multiple spaces', () => {
+    // Note: sanitizeQuery may add = for field-value pairs without operators
+    // This tests that multiple spaces are collapsed to single space
+    expect(sanitizeQuery('(statuscode =  1)')).toBe('(statuscode = 1)');
+  });
+
+  it('should preserve is-null operator', () => {
+    expect(sanitizeQuery('(fieldname is-null)')).toBe('(fieldname is-null)');
+  });
+
+  it('should preserve is-not-null operator', () => {
+    expect(sanitizeQuery('(fieldname is-not-null)')).toBe('(fieldname is-not-null)');
+  });
+
+  it('should preserve start-with operator', () => {
+    expect(sanitizeQuery('(name start-with test)')).toBe('(name start-with test)');
+  });
+});
+
+describe('QueryBuilder', () => {
+  describe('build()', () => {
+    it('should build empty string with no conditions', () => {
+      const builder = new QueryBuilder();
+      expect(builder.build()).toBe('');
+    });
+
+    it('should build simple equals condition', () => {
+      const query = new QueryBuilder()
+        .where('statuscode').equals('1')
+        .build();
+      expect(query).toBe('(statuscode = 1)');
+    });
+
+    it('should build not equals condition', () => {
+      const query = new QueryBuilder()
+        .where('statuscode').notEquals('1')
+        .build();
+      expect(query).toBe('(statuscode != 1)');
+    });
+
+    it('should build less than condition', () => {
+      const query = new QueryBuilder()
+        .where('amount').lessThan(100)
+        .build();
+      expect(query).toBe('(amount < 100)');
+    });
+
+    it('should build greater than condition', () => {
+      const query = new QueryBuilder()
+        .where('amount').greaterThan(100)
+        .build();
+      expect(query).toBe('(amount > 100)');
+    });
+
+    it('should build less than or equal condition', () => {
+      const query = new QueryBuilder()
+        .where('amount').lessThanOrEqual(100)
+        .build();
+      expect(query).toBe('(amount <= 100)');
+    });
+
+    it('should build greater than or equal condition', () => {
+      const query = new QueryBuilder()
+        .where('amount').greaterThanOrEqual(100)
+        .build();
+      expect(query).toBe('(amount >= 100)');
+    });
+
+    it('should build contains condition with % prefix', () => {
+      const query = new QueryBuilder()
+        .where('name').contains('test')
+        .build();
+      expect(query).toBe('(name start-with %test)');
+    });
+
+    it('should build not contains condition', () => {
+      const query = new QueryBuilder()
+        .where('name').notContains('test')
+        .build();
+      expect(query).toBe('(name not-start-with %test)');
+    });
+
+    it('should build starts with condition', () => {
+      const query = new QueryBuilder()
+        .where('name').startsWith('test')
+        .build();
+      expect(query).toBe('(name start-with test)');
+    });
+
+    it('should build not starts with condition', () => {
+      const query = new QueryBuilder()
+        .where('name').notStartsWith('test')
+        .build();
+      expect(query).toBe('(name not-start-with test)');
+    });
+
+    it('should build is null condition', () => {
+      const query = new QueryBuilder()
+        .where('email').isNull()
+        .build();
+      expect(query).toBe('(email is-null)');
+    });
+
+    it('should build is not null condition', () => {
+      const query = new QueryBuilder()
+        .where('email').isNotNull()
+        .build();
+      expect(query).toBe('(email is-not-null)');
+    });
+
+    it('should join conditions with AND', () => {
+      const query = new QueryBuilder()
+        .where('statuscode').equals('1')
+        .and()
+        .where('name').contains('test')
+        .build();
+      expect(query).toBe('(statuscode = 1) and (name start-with %test)');
+    });
+
+    it('should join conditions with OR', () => {
+      const query = new QueryBuilder()
+        .where('statuscode').equals('1')
+        .or()
+        .where('statuscode').equals('2')
+        .build();
+      expect(query).toBe('(statuscode = 1) or (statuscode = 2)');
+    });
+
+    it('should handle multiple conditions with mixed operators', () => {
+      const query = new QueryBuilder()
+        .where('statuscode').equals('1')
+        .and()
+        .where('name').contains('test')
+        .or()
+        .where('email').isNotNull()
+        .build();
+      expect(query).toBe('(statuscode = 1) and (name start-with %test) or (email is-not-null)');
+    });
+
+    it('should escape special characters in values', () => {
+      const query = new QueryBuilder()
+        .where('name').equals('test (special) and value')
+        .build();
+      expect(query).toBe('(name = test \\(special\\) \\and value)');
+    });
+  });
+
+  describe('select()', () => {
+    it('should accumulate selected fields', () => {
+      const builder = new QueryBuilder()
+        .select('accountid', 'name')
+        .select('email');
+
+      // Access internal state to verify
+      expect((builder as any).selectedFields).toEqual(['accountid', 'name', 'email']);
+    });
+  });
+
+  describe('sortBy()', () => {
+    it('should set sort field with default desc direction', () => {
+      const builder = new QueryBuilder().sortBy('modifiedon');
+      expect((builder as any).sortByField).toBe('modifiedon');
+      expect((builder as any).sortDirection).toBe('desc');
+    });
+
+    it('should set sort field with specified direction', () => {
+      const builder = new QueryBuilder().sortBy('name', 'asc');
+      expect((builder as any).sortByField).toBe('name');
+      expect((builder as any).sortDirection).toBe('asc');
+    });
+  });
+
+  describe('limit()', () => {
+    it('should set limit value', () => {
+      const builder = new QueryBuilder().limit(100);
+      expect((builder as any).limitValue).toBe(100);
+    });
+  });
+
+  describe('page()', () => {
+    it('should set page number', () => {
+      const builder = new QueryBuilder().page(2);
+      expect((builder as any).pageNumber).toBe(2);
+    });
+  });
+
+  describe('execute()', () => {
+    it('should throw error when no client is provided', async () => {
+      const builder = new QueryBuilder()
+        .objectType('1')
+        .where('statuscode').equals('1');
+
+      await expect(builder.execute()).rejects.toThrow(
+        'QueryBuilder requires a client to execute queries'
+      );
+    });
+
+    it('should throw error when objectType is not set', async () => {
+      const mockClient = {
+        query: async () => ({ records: [], total: 0, success: true }),
+      };
+
+      const builder = new QueryBuilder(mockClient)
+        .where('statuscode').equals('1');
+
+      await expect(builder.execute()).rejects.toThrow(
+        'Object type is required'
+      );
+    });
+
+    it('should call client.query with correct parameters', async () => {
+      let calledWith: any = null;
+      const mockClient = {
+        query: async (options: any) => {
+          calledWith = options;
+          return { records: [], total: 0, success: true };
+        },
+      };
+
+      await new QueryBuilder(mockClient)
+        .objectType('1')
+        .select('accountid', 'name')
+        .where('statuscode').equals('1')
+        .sortBy('modifiedon', 'desc')
+        .limit(50)
+        .execute();
+
+      expect(calledWith).toEqual({
+        objectType: '1',
+        fields: ['accountid', 'name'],
+        query: '(statuscode = 1)',
+        showRealValue: true,
+        sortBy: 'modifiedon',
+        sortType: 'desc',
+        limit: 50,
+      });
+    });
+
+    it('should use ["*"] when no fields selected', async () => {
+      let calledWith: any = null;
+      const mockClient = {
+        query: async (options: any) => {
+          calledWith = options;
+          return { records: [], total: 0, success: true };
+        },
+      };
+
+      await new QueryBuilder(mockClient)
+        .objectType('1')
+        .execute();
+
+      expect(calledWith.fields).toEqual(['*']);
+    });
+  });
+});
