@@ -18,9 +18,9 @@ export interface QueryOptions {
   showRealValue?: boolean;
   /** Page number (1-indexed) */
   page?: number;
-  /** Page size (max 500) */
+  /** Page size (default: 500, max: 500) */
   pageSize?: number;
-  /** Automatically fetch all pages (default: false) */
+  /** Automatically fetch all pages (default: true) */
   autoPage?: boolean;
   /** AbortSignal for cancellation */
   signal?: AbortSignal;

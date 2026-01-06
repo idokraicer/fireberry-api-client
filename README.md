@@ -77,18 +77,19 @@ const result = await client.query({
   limit: 100,
 });
 
-// Query with all fields
+// Query all records (auto-pagination enabled by default)
 const result = await client.query({
   objectType: '1',
   fields: '*',
-  limit: 10,
 });
 
-// Auto-pagination (fetch all pages)
-const allRecords = await client.query({
+// Manual pagination (disable auto-pagination)
+const page1 = await client.query({
   objectType: '1',
   fields: '*',
-  autoPage: true,
+  autoPage: false,
+  page: 1,
+  pageSize: 500, // default: 500, max: 500
 });
 ```
 

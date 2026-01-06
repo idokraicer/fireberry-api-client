@@ -229,7 +229,7 @@ export class FireberryClient {
       page = 1,
       pageSize = 500,
       showRealValue = true,
-      autoPage = false,
+      autoPage = true,
       signal,
     } = options;
 
