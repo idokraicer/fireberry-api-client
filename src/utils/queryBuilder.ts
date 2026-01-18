@@ -2,6 +2,55 @@ import type { QueryOperator } from '../types/query';
 import { getObjectIdFieldName } from '../constants/objectIds';
 
 /**
+ * Regular expression to match pure date format (YYYY-MM-DD).
+ * Does not match datetime formats like YYYY-MM-DDTHH:MM:SS or YYYY-MM-DD HH:MM:SS.
+ */
+const PURE_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Checks if a value is a pure date string (YYYY-MM-DD format).
+ * Returns false for datetime formats that include time components.
+ *
+ * @param value - The value to check
+ * @returns True if the value is a pure date string
+ *
+ * @example
+ * isPureDate('2024-01-15')           // true
+ * isPureDate('2024-01-15T10:30:00')  // false
+ * isPureDate('2024-01-15 10:30:00')  // false
+ * isPureDate('123')                  // false
+ */
+export function isPureDate(value: string): boolean {
+  return PURE_DATE_REGEX.test(value);
+}
+
+/**
+ * Adds a specified number of days to a date string.
+ * Works with both pure dates (YYYY-MM-DD) and datetime formats.
+ *
+ * @param dateStr - The date string to modify
+ * @param days - Number of days to add (can be negative)
+ * @returns The modified date in YYYY-MM-DD format
+ *
+ * @example
+ * addDays('2024-01-15', 1)   // '2024-01-16'
+ * addDays('2024-01-31', 1)   // '2024-02-01'
+ * addDays('2024-03-01', -1)  // '2024-02-29' (leap year)
+ */
+export function addDays(dateStr: string, days: number): string {
+  // Extract just the date part if datetime format
+  const datePart = dateStr.split(/[T\s]/)[0];
+  const date = new Date(datePart + 'T00:00:00');
+  date.setDate(date.getDate() + days);
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Escapes special characters in query values to prevent query injection.
  * This is a security measure to ensure user-provided values cannot modify
  * the query structure or inject additional query logic.
@@ -99,9 +148,9 @@ export interface ConditionBuilder {
   lessThan(value: string | number): QueryBuilder;
   /** Greater than comparison (>) - works with numbers and dates */
   greaterThan(value: string | number): QueryBuilder;
-  /** Less than or equal (<=) - works with numbers ONLY (not dates!) */
+  /** Less than or equal (<=) - auto-converts pure dates (YYYY-MM-DD) to < nextDay */
   lessThanOrEqual(value: string | number): QueryBuilder;
-  /** Greater than or equal (>=) - works with numbers ONLY (not dates!) */
+  /** Greater than or equal (>=) - works with numbers and dates */
   greaterThanOrEqual(value: string | number): QueryBuilder;
   /** Contains value (translates to start-with %value) */
   contains(value: string): QueryBuilder;
@@ -454,7 +503,16 @@ export class QueryBuilder {
         return this;
       },
       lessThanOrEqual: (value: string | number): QueryBuilder => {
-        this.addCondition(field, '<=', String(value));
+        const strValue = String(value);
+        // Fireberry API bug: <= with pure dates (YYYY-MM-DD) behaves like <
+        // because it interprets the date as midnight (00:00:00).
+        // Auto-convert to < nextDay for correct "on or before" behavior.
+        if (isPureDate(strValue)) {
+          const nextDay = addDays(strValue, 1);
+          this.addCondition(field, '<', nextDay);
+        } else {
+          this.addCondition(field, '<=', strValue);
+        }
         return this;
       },
       greaterThanOrEqual: (value: string | number): QueryBuilder => {

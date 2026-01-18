@@ -1,5 +1,60 @@
 import { describe, it, expect } from 'vitest';
-import { QueryBuilder, escapeQueryValue, sanitizeQuery } from '../../src/utils/queryBuilder';
+import { QueryBuilder, escapeQueryValue, sanitizeQuery, isPureDate, addDays } from '../../src/utils/queryBuilder';
+
+describe('isPureDate', () => {
+  it('should return true for YYYY-MM-DD format', () => {
+    expect(isPureDate('2024-01-15')).toBe(true);
+    expect(isPureDate('2023-12-31')).toBe(true);
+    expect(isPureDate('2025-06-01')).toBe(true);
+  });
+
+  it('should return false for datetime formats', () => {
+    expect(isPureDate('2024-01-15T10:30:00')).toBe(false);
+    expect(isPureDate('2024-01-15 10:30:00')).toBe(false);
+    expect(isPureDate('2024-01-15T00:00:00Z')).toBe(false);
+  });
+
+  it('should return false for invalid formats', () => {
+    expect(isPureDate('01-15-2024')).toBe(false);
+    expect(isPureDate('2024/01/15')).toBe(false);
+    expect(isPureDate('2024-1-15')).toBe(false);
+    expect(isPureDate('20240115')).toBe(false);
+    expect(isPureDate('123')).toBe(false);
+    expect(isPureDate('')).toBe(false);
+  });
+});
+
+describe('addDays', () => {
+  it('should add days to a date', () => {
+    expect(addDays('2024-01-15', 1)).toBe('2024-01-16');
+    expect(addDays('2024-01-15', 5)).toBe('2024-01-20');
+  });
+
+  it('should handle month boundaries', () => {
+    expect(addDays('2024-01-31', 1)).toBe('2024-02-01');
+    expect(addDays('2024-03-31', 1)).toBe('2024-04-01');
+  });
+
+  it('should handle year boundaries', () => {
+    expect(addDays('2024-12-31', 1)).toBe('2025-01-01');
+  });
+
+  it('should handle leap years', () => {
+    expect(addDays('2024-02-28', 1)).toBe('2024-02-29');
+    expect(addDays('2024-02-29', 1)).toBe('2024-03-01');
+    expect(addDays('2023-02-28', 1)).toBe('2023-03-01');
+  });
+
+  it('should handle negative days', () => {
+    expect(addDays('2024-01-15', -1)).toBe('2024-01-14');
+    expect(addDays('2024-01-01', -1)).toBe('2023-12-31');
+  });
+
+  it('should handle datetime input by extracting date part', () => {
+    expect(addDays('2024-01-15T10:30:00', 1)).toBe('2024-01-16');
+    expect(addDays('2024-01-15 10:30:00', 1)).toBe('2024-01-16');
+  });
+});
 
 describe('escapeQueryValue', () => {
   it('should return empty string for empty input', () => {
@@ -108,11 +163,48 @@ describe('QueryBuilder', () => {
       expect(query).toBe('(amount > 100)');
     });
 
-    it('should build less than or equal condition', () => {
+    it('should build less than or equal condition for numbers', () => {
       const query = new QueryBuilder()
         .where('amount').lessThanOrEqual(100)
         .build();
       expect(query).toBe('(amount <= 100)');
+    });
+
+    it('should auto-convert lessThanOrEqual with pure date to less than next day', () => {
+      const query = new QueryBuilder()
+        .where('createdon').lessThanOrEqual('2024-01-15')
+        .build();
+      // Pure date (YYYY-MM-DD) is converted to < nextDay for correct behavior
+      expect(query).toBe('(createdon < 2024-01-16)');
+    });
+
+    it('should not convert lessThanOrEqual with datetime value', () => {
+      const query = new QueryBuilder()
+        .where('createdon').lessThanOrEqual('2024-01-15T23:59:59')
+        .build();
+      // Datetime values are passed through unchanged
+      expect(query).toBe('(createdon <= 2024-01-15T23:59:59)');
+    });
+
+    it('should not convert lessThanOrEqual with datetime space format', () => {
+      const query = new QueryBuilder()
+        .where('createdon').lessThanOrEqual('2024-01-15 23:59:59')
+        .build();
+      expect(query).toBe('(createdon <= 2024-01-15 23:59:59)');
+    });
+
+    it('should handle month boundary in date conversion', () => {
+      const query = new QueryBuilder()
+        .where('createdon').lessThanOrEqual('2024-01-31')
+        .build();
+      expect(query).toBe('(createdon < 2024-02-01)');
+    });
+
+    it('should handle year boundary in date conversion', () => {
+      const query = new QueryBuilder()
+        .where('createdon').lessThanOrEqual('2024-12-31')
+        .build();
+      expect(query).toBe('(createdon < 2025-01-01)');
     });
 
     it('should build greater than or equal condition', () => {

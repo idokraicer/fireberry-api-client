@@ -138,14 +138,19 @@ const contact = await client.queryBuilder()
 // .notEquals(value)      - Not equal
 // .lessThan(value)       - Less than
 // .greaterThan(value)    - Greater than
-// .lessThanOrEqual(value) - Less than or equal (numbers only)
-// .greaterThanOrEqual(value) - Greater than or equal (numbers only)
+// .lessThanOrEqual(value) - Less than or equal (see date note below)
+// .greaterThanOrEqual(value) - Greater than or equal
 // .contains(value)       - Contains (translates to start-with %value)
 // .notContains(value)    - Does not contain
 // .startsWith(value)     - Starts with
 // .notStartsWith(value)  - Does not start with
 // .isNull()              - Field is null
 // .isNotNull()           - Field is not null
+
+// Date handling:
+// Pure dates (YYYY-MM-DD) are auto-converted for lessThanOrEqual
+// Example: .lessThanOrEqual('2024-01-15') becomes < 2024-01-16
+// This ensures records from Jan 15 are included (API quirk workaround)
 ```
 
 ### CRUD Operations
@@ -427,8 +432,8 @@ Fireberry uses a custom query syntax:
 '(field != value)'          // Not equals
 '(field < value)'           // Less than
 '(field > value)'           // Greater than
-'(field <= value)'          // Less than or equal (numbers only)
-'(field >= value)'          // Greater than or equal (numbers only)
+'(field <= value)'          // Less than or equal
+'(field >= value)'          // Greater than or equal
 '(field start-with value)'  // Starts with
 '(field start-with %value)' // Contains (% is wildcard)
 '(field is-null)'           // Is null
@@ -443,6 +448,25 @@ Fireberry uses a custom query syntax:
 ```
 
 **Important:** Dropdown fields use IDs, not labels. Use `showRealValue: true` to get labels in responses.
+
+### Date Query Quirk
+
+The Fireberry API has a quirk with `<=` and pure date formats (YYYY-MM-DD). When you query `(createdon <= 2024-01-15)`, the API interprets this as `<= 2024-01-15 00:00:00`, which excludes records from January 15th.
+
+**The QueryBuilder automatically handles this:** When using `.lessThanOrEqual()` with a pure date, it converts to `< nextDay`:
+
+```typescript
+// This query:
+.where('createdon').lessThanOrEqual('2024-01-15')
+// Becomes: (createdon < 2024-01-16)
+// Correctly includes all records from January 15th
+
+// Datetime values are passed through unchanged:
+.where('createdon').lessThanOrEqual('2024-01-15T23:59:59')
+// Becomes: (createdon <= 2024-01-15T23:59:59)
+```
+
+If building raw query strings, use `< nextDay` instead of `<=` for "on or before" date queries.
 
 ## Development
 
