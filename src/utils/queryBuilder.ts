@@ -89,7 +89,7 @@ export function sanitizeQuery(query: string): string {
 /**
  * Condition builder for fluent query construction
  */
-interface ConditionBuilder {
+export interface ConditionBuilder {
   /** Equals comparison (=) */
   equals(value: string | number): QueryBuilder;
   /** Not equals comparison (!=) */
@@ -310,6 +310,53 @@ export class QueryBuilder {
     }
 
     return parts.join(' ');
+  }
+
+  /**
+   * Returns the selected fields array
+   * Useful for inspecting the query configuration
+   */
+  getFields(): string[] {
+    return [...this.selectedFields];
+  }
+
+  /**
+   * Converts the query builder state to a payload compatible with @fireberry/sdk
+   *
+   * @returns Object with `fields` (comma-separated string) and `query` (filter string)
+   *
+   * @example
+   * ```typescript
+   * import FireberryClientSDK from '@fireberry/sdk/client';
+   * import { QueryBuilder } from 'fireberry-api-client';
+   *
+   * const sdk = new FireberryClientSDK();
+   * await sdk.initializeContext();
+   *
+   * const payload = new QueryBuilder()
+   *   .select('accountid', 'accountname')
+   *   .where('statuscode').equals('1')
+   *   .toSDKPayload();
+   *
+   * // Use with SDK
+   * const results = await sdk.api.query(1, payload);
+   * ```
+   */
+  toSDKPayload(): { fields: string; query: string; page_size?: number; page_number?: number } {
+    const payload: { fields: string; query: string; page_size?: number; page_number?: number } = {
+      fields: this.selectedFields.length > 0 ? this.selectedFields.join(',') : '*',
+      query: this.build(),
+    };
+
+    if (this.limitValue !== null) {
+      payload.page_size = this.limitValue;
+    }
+
+    if (this.pageNumber > 1) {
+      payload.page_number = this.pageNumber;
+    }
+
+    return payload;
   }
 
   /**

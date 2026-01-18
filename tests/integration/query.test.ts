@@ -211,6 +211,7 @@ describeIntegration('Query API (Integration)', () => {
         fields: ['accountid'],
         page: 1,
         pageSize: 2,
+        autoPage: false,
       });
 
       const page2 = await client.query({
@@ -218,6 +219,7 @@ describeIntegration('Query API (Integration)', () => {
         fields: ['accountid'],
         page: 2,
         pageSize: 2,
+        autoPage: false,
       });
 
       expect(page1.success).toBe(true);

@@ -227,6 +227,84 @@ const promise = client.query({
 controller.abort();
 ```
 
+## SDK Adapter (for @fireberry/sdk)
+
+If you're building embedded Fireberry widgets/plugins using `@fireberry/sdk`, you can use this library's utilities with the SDK adapter:
+
+```typescript
+import FireberryClientSDK from '@fireberry/sdk/client';
+import { createSDKQueryBuilder, EnhancedSDK } from 'fireberry-api-client/sdk';
+
+// Initialize Fireberry SDK (runs in iframe)
+const sdk = new FireberryClientSDK();
+await sdk.initializeContext();
+```
+
+### Option 1: Query Builder Factory
+
+```typescript
+import { createSDKQueryBuilder } from 'fireberry-api-client/sdk';
+
+const queryBuilder = createSDKQueryBuilder(sdk);
+
+// Build and execute queries with fluent API
+const results = await queryBuilder(1) // 1 = Account
+  .select('accountid', 'accountname', 'statuscode')
+  .selectWithLabels('ownerid') // Auto-adds 'ownername'
+  .where('statuscode').equals('1')
+  .pageSize(50)
+  .execute();
+```
+
+### Option 2: Enhanced SDK Wrapper
+
+```typescript
+import { EnhancedSDK } from 'fireberry-api-client/sdk';
+
+const enhanced = EnhancedSDK.create(sdk);
+
+// Access context easily
+console.log('Current user:', enhanced.userId, enhanced.userFullName);
+console.log('Current record:', enhanced.recordId, enhanced.recordType);
+
+// Query with utilities
+const results = await enhanced
+  .query(1)
+  .select('accountid', 'accountname')
+  .where('ownerid').equals(enhanced.userId!)
+  .execute();
+
+// Use field utilities
+const idField = enhanced.getIdField(1);      // 'accountid'
+const nameField = enhanced.getNameField(2);  // 'fullname'
+const labelField = enhanced.getLabelField('statuscode', 1); // 'status'
+
+// Expand fields with their labels
+const fields = enhanced.expandFieldsWithLabels(['statuscode', 'ownerid'], 1);
+// ['statuscode', 'status', 'ownerid', 'ownername']
+
+// CRUD operations
+await enhanced.create(1, { accountname: 'New Account' });
+await enhanced.update(1, 'record-id', { accountname: 'Updated' });
+await enhanced.delete(1, 'record-id');
+```
+
+### Option 3: Use QueryBuilder Directly
+
+```typescript
+import { QueryBuilder } from 'fireberry-api-client';
+
+// Build query and convert to SDK-compatible payload
+const payload = new QueryBuilder()
+  .select('accountid', 'accountname')
+  .where('statuscode').equals('1')
+  .limit(50)
+  .toSDKPayload();
+
+// Execute with SDK
+const results = await sdk.api.query(1, payload);
+```
+
 ## Utility Functions
 
 Utility functions are available as a separate export:
@@ -353,6 +431,10 @@ npm run lint
 # Type check
 npm run typecheck
 ```
+
+## Author
+
+Created by **Ido Kraicer** - An open-source client library built for the Fireberry community.
 
 ## License
 

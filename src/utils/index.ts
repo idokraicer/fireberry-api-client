@@ -28,7 +28,7 @@ export {
 } from './helpers';
 
 // Query builder utilities
-export { QueryBuilder, escapeQueryValue, sanitizeQuery } from './queryBuilder';
+export { QueryBuilder, escapeQueryValue, sanitizeQuery, type ConditionBuilder } from './queryBuilder';
 
 // Re-export constants for convenience
 export {

@@ -119,6 +119,7 @@ describeIntegration('Stress Tests (Integration)', () => {
         query: `(accountname start-with ${testPrefix})`,
         page: 1,
         pageSize: 50,
+        autoPage: false,
       });
       const page1Duration = performance.now() - startPage1;
 
@@ -134,6 +135,7 @@ describeIntegration('Stress Tests (Integration)', () => {
         query: `(accountname start-with ${testPrefix})`,
         page: 2,
         pageSize: 50,
+        autoPage: false,
       });
       const page2Duration = performance.now() - startPage2;
 
