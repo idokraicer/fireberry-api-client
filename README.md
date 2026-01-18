@@ -434,7 +434,7 @@ npm run typecheck
 
 ## Author
 
-Created by **Ido Kraicer** - An open-source client library built for the Fireberry community.
+Created by **[Ido Kraicer](https://www.linkedin.com/in/ido-kraicer/)** - An open-source client library built for the Fireberry community.
 
 ## License
 
