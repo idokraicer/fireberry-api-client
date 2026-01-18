@@ -301,6 +301,52 @@ export class QueryBuilder {
   }
 
   /**
+   * Adds WHERE conditions for multiple primary ID values, joined with OR
+   * @param values - Array of ID values to match
+   * @throws Error if objectType is not set
+   * @throws Error if values array is empty
+   *
+   * @example
+   * ```typescript
+   * // Query multiple accounts by ID:
+   * new QueryBuilder(client)
+   *   .objectType(1)
+   *   .whereIds(['id1', 'id2', 'id3'])
+   *   .execute();
+   *
+   * // Generates: (accountid = id1) or (accountid = id2) or (accountid = id3)
+   *
+   * // Can be combined with other conditions:
+   * new QueryBuilder(client)
+   *   .objectType(1)
+   *   .whereIds(['id1', 'id2'])
+   *   .and()
+   *   .where('statuscode').equals('1')
+   *   .execute();
+   * ```
+   */
+  whereIds(values: (string | number)[]): this {
+    if (!this.objectTypeId) {
+      throw new Error('Object type must be set before using whereIds(). Call .objectType() first.');
+    }
+    if (!values || values.length === 0) {
+      throw new Error('whereIds() requires at least one ID value.');
+    }
+    const idField = getObjectIdFieldName(this.objectTypeId);
+
+    // Add first condition
+    this.addCondition(idField, '=', String(values[0]));
+
+    // Add remaining conditions with OR
+    for (let i = 1; i < values.length; i++) {
+      this.joinOperators.push('or');
+      this.addCondition(idField, '=', String(values[i]));
+    }
+
+    return this;
+  }
+
+  /**
    * Adds an AND logical operator
    */
   and(): this {

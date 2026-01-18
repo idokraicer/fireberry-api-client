@@ -126,6 +126,12 @@ const account = await client.queryBuilder()
   .whereId('abc123')  // Uses 'accountid' automatically
   .execute();
 
+// Query multiple IDs with OR
+const accounts = await client.queryBuilder()
+  .objectType(1)
+  .whereIds(['id1', 'id2', 'id3'])  // (accountid = id1) or (accountid = id2) or (accountid = id3)
+  .execute();
+
 // Works with any object type
 const contact = await client.queryBuilder()
   .objectType(2)
@@ -134,6 +140,7 @@ const contact = await client.queryBuilder()
 
 // Available conditions:
 // .whereId(value)        - Query by primary ID (auto-mapped field)
+// .whereIds([...])       - Query multiple IDs with OR (auto-mapped field)
 // .equals(value)         - Exact match
 // .notEquals(value)      - Not equal
 // .lessThan(value)       - Less than

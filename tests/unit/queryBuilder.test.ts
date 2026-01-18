@@ -459,4 +459,78 @@ describe('QueryBuilder', () => {
       expect(query).toBe('(accountid = 12345)');
     });
   });
+
+  describe('whereIds()', () => {
+    it('should throw error when objectType is not set', () => {
+      const builder = new QueryBuilder();
+      expect(() => builder.whereIds(['id1', 'id2'])).toThrow(
+        'Object type must be set before using whereIds()'
+      );
+    });
+
+    it('should throw error when values array is empty', () => {
+      const builder = new QueryBuilder().objectType(1);
+      expect(() => builder.whereIds([])).toThrow(
+        'whereIds() requires at least one ID value'
+      );
+    });
+
+    it('should handle single ID', () => {
+      const query = new QueryBuilder()
+        .objectType(1)
+        .whereIds(['abc123'])
+        .build();
+      expect(query).toBe('(accountid = abc123)');
+    });
+
+    it('should join multiple IDs with OR', () => {
+      const query = new QueryBuilder()
+        .objectType(1)
+        .whereIds(['id1', 'id2', 'id3'])
+        .build();
+      expect(query).toBe('(accountid = id1) or (accountid = id2) or (accountid = id3)');
+    });
+
+    it('should use correct ID field for object type', () => {
+      const query = new QueryBuilder()
+        .objectType(2)
+        .whereIds(['c1', 'c2'])
+        .build();
+      expect(query).toBe('(contactid = c1) or (contactid = c2)');
+    });
+
+    it('should work with custom objects', () => {
+      const query = new QueryBuilder()
+        .objectType(1001)
+        .whereIds(['custom1', 'custom2'])
+        .build();
+      expect(query).toBe('(customobject1001id = custom1) or (customobject1001id = custom2)');
+    });
+
+    it('should accept numeric values', () => {
+      const query = new QueryBuilder()
+        .objectType(1)
+        .whereIds([123, 456, 789])
+        .build();
+      expect(query).toBe('(accountid = 123) or (accountid = 456) or (accountid = 789)');
+    });
+
+    it('should work with other conditions using and()', () => {
+      const query = new QueryBuilder()
+        .objectType(1)
+        .whereIds(['id1', 'id2'])
+        .and()
+        .where('statuscode').equals('1')
+        .build();
+      expect(query).toBe('(accountid = id1) or (accountid = id2) and (statuscode = 1)');
+    });
+
+    it('should accept mixed string and number values', () => {
+      const query = new QueryBuilder()
+        .objectType(1)
+        .whereIds(['abc', 123, 'xyz'])
+        .build();
+      expect(query).toBe('(accountid = abc) or (accountid = 123) or (accountid = xyz)');
+    });
+  });
 });
