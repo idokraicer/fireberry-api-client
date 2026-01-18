@@ -1,26 +1,26 @@
 {
   "name": "fireberry-api-client",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2.3.1",
   "description": "Fireberry CRM API Client for Node.js",
   "type": "module",
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     },
     "./utils": {
       "types": "./dist/utils/index.d.ts",
-      "import": "./dist/utils/index.mjs",
-      "require": "./dist/utils/index.js"
+      "import": "./dist/utils/index.js",
+      "require": "./dist/utils/index.cjs"
     },
     "./sdk": {
       "types": "./dist/sdk/index.d.ts",
-      "import": "./dist/sdk/index.mjs",
-      "require": "./dist/sdk/index.js"
+      "import": "./dist/sdk/index.js",
+      "require": "./dist/sdk/index.cjs"
     }
   },
   "files": [

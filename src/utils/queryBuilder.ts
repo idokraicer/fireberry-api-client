@@ -1,4 +1,5 @@
 import type { QueryOperator } from '../types/query';
+import { getObjectIdFieldName } from '../constants/objectIds';
 
 /**
  * Escapes special characters in query values to prevent query injection.
@@ -219,6 +220,35 @@ export class QueryBuilder {
   where(field: string): ConditionBuilder {
     this.currentField = field;
     return this.createConditionBuilder();
+  }
+
+  /**
+   * Adds a WHERE condition for the primary ID field, automatically mapped based on object type
+   * @param value - The ID value to match
+   * @throws Error if objectType is not set
+   *
+   * @example
+   * ```typescript
+   * // Instead of knowing the exact field name:
+   * new QueryBuilder(client)
+   *   .objectType(1)
+   *   .whereId('abc123')  // Automatically uses 'accountid' for object type 1
+   *   .execute();
+   *
+   * // Equivalent to:
+   * new QueryBuilder(client)
+   *   .objectType(1)
+   *   .where('accountid').equals('abc123')
+   *   .execute();
+   * ```
+   */
+  whereId(value: string | number): this {
+    if (!this.objectTypeId) {
+      throw new Error('Object type must be set before using whereId(). Call .objectType() first.');
+    }
+    const idField = getObjectIdFieldName(this.objectTypeId);
+    this.addCondition(idField, '=', String(value));
+    return this;
   }
 
   /**

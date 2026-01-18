@@ -30,7 +30,14 @@ export interface FireberryField {
   maxLength?: number;
   /** Precision for number fields */
   precision?: number;
-  /** Related object ID for lookup fields */
+  /**
+   * Related object type ID for lookup fields.
+   * Only populated when getFields is called with includeLookupRelations: true
+   */
+  relatedObjectType?: number;
+  /**
+   * @deprecated Use `relatedObjectType` instead. This was never populated by the API.
+   */
   relatedObjectId?: string;
 }
 

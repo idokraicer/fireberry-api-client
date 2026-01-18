@@ -1,34 +1,63 @@
 /**
  * Object Type ID to Primary Key Field Mapping
  * Maps Fireberry object type IDs to their primary key field names
+ * Generated from actual API responses
  */
 export const OBJECT_ID_MAP: Record<number, string> = {
-  1: 'accountid',
-  2: 'contactid',
-  3: 'leadid',
-  4: 'opportunityid',
-  5: 'casesid',
-  6: 'activityid',
-  7: 'noteid',
-  8: 'competitorid',
-  9: 'crmuserid',
-  10: 'taskid',
-  13: 'crmorderid',
-  14: 'productid',
-  17: 'crmorderitemid',
-  20: 'emailtemplateid',
-  23: 'businessunitid',
-  27: 'printtemplateid',
-  28: 'contractid',
-  33: 'accountproductid',
-  46: 'projectid',
-  67: 'campaignid',
-  76: 'articleid',
-  86: 'invoiceid',
-  101: 'attendanceclockid',
-  102: 'activitylogid',
-  104: 'conversationid',
-  114: 'calendarresourceid',
+  1: 'accountid', // Account
+  2: 'contactid', // Contact
+  3: 'leadid', // Lead
+  4: 'opportunityid', // Opportunity
+  5: 'casesid', // Cases
+  6: 'activityid', // Activity
+  7: 'noteid', // Note
+  8: 'competitorid', // Competitor
+  9: 'crmuserid', // CrmUser
+  10: 'taskid', // Task
+  12: 'quoteid', // Quote
+  13: 'crmorderid', // CrmOrder
+  14: 'productid', // Product
+  17: 'crmorderitemid', // CrmOrderItem
+  20: 'emailtemplateid', // EmailTemplate
+  23: 'businessunitid', // BusinessUnit
+  25: 'orgid', // Org
+  27: 'printtemplateid', // PrintTemplate
+  28: 'contractid', // Contract
+  33: 'accountproductid', // AccountProduct
+  46: 'projectid', // Project
+  55: 'wfruleid', // WFRule
+  58: 'mdobjectid', // MDObject
+  64: 'roleid', // Role
+  67: 'campaignid', // Campaign
+  70: 'crmuserloginid', // CrmUserLogin
+  73: 'systemfieldid', // SystemField
+  76: 'articleid', // Article
+  77: 'linkid', // Link
+  78: 'invoiceid', // Invoice
+  80: 'invoicereceiptitemid', // InvoiceReceiptItem
+  81: 'invoiceid', // InvoiceNo
+  82: 'invoiceid', // InvoiceDraft
+  83: 'invoiceid', // InvoiceReceipt
+  84: 'invoiceid', // InvoiceReno
+  85: 'invoiceid', // InvoiceCredit
+  86: 'invoiceid', // InvoiceDelivery
+  89: 'iprestrictionid', // IpRestriction
+  90: 'transactionitemid', // TransactionItem
+  93: 'chargeid', // Charge
+  100: 'calllogid', // calllog
+  101: 'attendanceclockid', // AttendanceClock
+  102: 'activitylogid', // ActivityLog
+  104: 'conversationid', // Conversation
+  105: 'teaminboxid', // TeamInbox
+  106: 'texttemplateid', // TextTemplate
+  107: 'facebookconnectionid', // FacebookConnection
+  109: 'auditlogid', // AuditLog
+  110: 'smstemplateid', // SMSTemplate
+  111: 'providerverificationid', // ProviderVerification
+  114: 'calendarresourceid', // CalendarResource
+  115: 'journeyid', // Journey
+  116: 'profileid', // Profile
+  117: 'landingpageid', // LandingPage
 };
 
 /**

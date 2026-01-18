@@ -411,7 +411,7 @@ describe('SDK Adapter', () => {
 
         expect(enhanced.getNameField(1)).toBe('accountname');
         expect(enhanced.getNameField(2)).toBe('fullname');
-        expect(enhanced.getNameField(14)).toBe('productname');
+        expect(enhanced.getNameField(14)).toBe('name');
       });
 
       it('should get label field for dropdown/lookup', () => {

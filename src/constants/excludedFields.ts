@@ -4,12 +4,18 @@
  */
 export const EXCLUDED_FIELDS_FOR_STAR_QUERY: Record<string, string[]> = {
   '7': ['deletedon', 'deletedby'], // Note
-  '8': ['deletedon', 'deletedby'], // Competitor
+  '8': ['deletedon', 'deletedby', 's', 'w', 'o', 't', 'description'], // Competitor
   '114': ['deletedon', 'deletedby'], // Calendar Resource
   '115': ['deletedon', 'deletedby'], // Customer Journey
   '116': ['deletedon', 'deletedby'], // Profile
   '117': ['deletedon', 'deletedby'], // Landing Page
 };
+
+/**
+ * Fields to exclude from lookup relation queries across ALL object types
+ * These fields cause API errors when queried for lookup relationships
+ */
+export const EXCLUDED_LOOKUP_FIELDS: string[] = ['deletedby', 'deletedon'];
 
 /**
  * Checks if a field should be excluded from star queries for a given object type

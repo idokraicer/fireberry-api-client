@@ -9,6 +9,7 @@ A standalone, framework-agnostic TypeScript/JavaScript client for the Fireberry 
 - Supports both ESM and CommonJS
 - Automatic retry on rate limits (429)
 - Optional metadata caching
+- Lookup field relationship detection
 - Fluent QueryBuilder API
 - Batch operations with auto-chunking
 - AbortController support for cancellation
@@ -119,7 +120,20 @@ const result = await client.queryBuilder()
   .limit(50)
   .execute();
 
+// Query by ID - automatically uses correct field name for object type
+const account = await client.queryBuilder()
+  .objectType(1)
+  .whereId('abc123')  // Uses 'accountid' automatically
+  .execute();
+
+// Works with any object type
+const contact = await client.queryBuilder()
+  .objectType(2)
+  .whereId('xyz789')  // Uses 'contactid' automatically
+  .execute();
+
 // Available conditions:
+// .whereId(value)        - Query by primary ID (auto-mapped field)
 // .equals(value)         - Exact match
 // .notEquals(value)      - Not equal
 // .lessThan(value)       - Less than
@@ -187,8 +201,15 @@ await client.batch.delete('1', ['id-1', 'id-2', 'id-3']);
 // Get all objects
 const objects = await client.metadata.getObjects();
 
-// Get fields for an object
+// Get fields for an object (includes lookup relationships by default)
 const fields = await client.metadata.getFields('1');
+
+// Find which object a lookup field references
+const primaryContact = fields.fields.find(f => f.fieldName === 'primarycontactid');
+console.log(primaryContact?.relatedObjectType); // 2 (Contact)
+
+// Disable lookup relations for faster response (skips additional API call)
+const fieldsOnly = await client.metadata.getFields('1', { includeLookupRelations: false });
 
 // Get dropdown values
 const values = await client.metadata.getFieldValues('1', 'statuscode');
@@ -340,7 +361,7 @@ getObjectIdFieldName('1000');   // 'customobject1000id'
 // Get display name field
 getNameFieldByObjectType('1');  // 'accountname'
 getNameFieldByObjectType('2');  // 'fullname' (Contact)
-getNameFieldByObjectType('14'); // 'productname' (Product)
+getNameFieldByObjectType('14'); // 'name' (Product)
 
 // Get label field for a lookup/dropdown field
 getLabelFieldForField('accountid', '1');  // 'accountname'
@@ -361,10 +382,10 @@ isLookupField('6');    // true
 | 4 | Opportunity | opportunityid | name |
 | 5 | Case | casesid | title |
 | 6 | Activity | activityid | subject |
-| 7 | Note | noteid | subject |
+| 7 | Note | noteid | notetext |
 | 10 | Task | taskid | subject |
-| 13 | CRM Order | crmorderid | name |
-| 14 | Product | productid | productname |
+| 13 | CRM Order | crmorderid | crmordernumber |
+| 14 | Product | productid | name |
 | 1000+ | Custom Objects | customobject{N}id | name |
 
 ## Error Handling

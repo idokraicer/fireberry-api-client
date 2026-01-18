@@ -308,4 +308,63 @@ describe('QueryBuilder', () => {
       expect(calledWith.fields).toEqual(['*']);
     });
   });
+
+  describe('whereId()', () => {
+    it('should throw error when objectType is not set', () => {
+      const builder = new QueryBuilder();
+      expect(() => builder.whereId('abc123')).toThrow(
+        'Object type must be set before using whereId()'
+      );
+    });
+
+    it('should use accountid for object type 1', () => {
+      const query = new QueryBuilder()
+        .objectType(1)
+        .whereId('abc123')
+        .build();
+      expect(query).toBe('(accountid = abc123)');
+    });
+
+    it('should use contactid for object type 2', () => {
+      const query = new QueryBuilder()
+        .objectType(2)
+        .whereId('xyz789')
+        .build();
+      expect(query).toBe('(contactid = xyz789)');
+    });
+
+    it('should use leadid for object type 3', () => {
+      const query = new QueryBuilder()
+        .objectType('3')
+        .whereId('lead-id')
+        .build();
+      expect(query).toBe('(leadid = lead-id)');
+    });
+
+    it('should use customobjectXid for custom objects', () => {
+      const query = new QueryBuilder()
+        .objectType(1001)
+        .whereId('custom-id')
+        .build();
+      expect(query).toBe('(customobject1001id = custom-id)');
+    });
+
+    it('should work with other conditions using and()', () => {
+      const query = new QueryBuilder()
+        .objectType(1)
+        .whereId('abc123')
+        .and()
+        .where('statuscode').equals('1')
+        .build();
+      expect(query).toBe('(accountid = abc123) and (statuscode = 1)');
+    });
+
+    it('should accept numeric values', () => {
+      const query = new QueryBuilder()
+        .objectType(1)
+        .whereId(12345)
+        .build();
+      expect(query).toBe('(accountid = 12345)');
+    });
+  });
 });

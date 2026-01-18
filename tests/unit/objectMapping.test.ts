@@ -68,20 +68,20 @@ describe('objectMapping', () => {
       expect(getNameFieldByObjectType(3)).toBe('fullname');
     });
 
-    it('should return subject for object type 7 (Note)', () => {
-      expect(getNameFieldByObjectType(7)).toBe('subject');
+    it('should return notetext for object type 7 (Note)', () => {
+      expect(getNameFieldByObjectType(7)).toBe('notetext');
     });
 
     it('should return subject for object type 10 (Task)', () => {
       expect(getNameFieldByObjectType(10)).toBe('subject');
     });
 
-    it('should return productname for object type 14 (Product)', () => {
-      expect(getNameFieldByObjectType(14)).toBe('productname');
+    it('should return name for object type 14 (Product)', () => {
+      expect(getNameFieldByObjectType(14)).toBe('name');
     });
 
-    it('should return title for object type 76 (Article)', () => {
-      expect(getNameFieldByObjectType(76)).toBe('title');
+    it('should return articlename for object type 76 (Article)', () => {
+      expect(getNameFieldByObjectType(76)).toBe('articlename');
     });
 
     it('should return name for custom objects (1000+)', () => {
@@ -107,7 +107,7 @@ describe('objectMapping', () => {
     it('should contain expected base object mappings', () => {
       expect(OBJECT_NAME_MAP[1]).toBe('accountname');
       expect(OBJECT_NAME_MAP[2]).toBe('fullname');
-      expect(OBJECT_NAME_MAP[14]).toBe('productname');
+      expect(OBJECT_NAME_MAP[14]).toBe('name');
     });
   });
 });
