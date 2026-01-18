@@ -19,7 +19,26 @@ A standalone, framework-agnostic TypeScript/JavaScript client for the Fireberry 
 npm install fireberry-api-client
 ```
 
+Install a specific version:
+
+```bash
+npm install fireberry-api-client@1.0.0-beta.1
+```
+
 **Requirements:** Node.js 18+
+
+### Import Paths
+
+```typescript
+// Main export
+import { FireberryClient } from 'fireberry-api-client';
+
+// Utilities export
+import { getObjectIdFieldName } from 'fireberry-api-client/utils';
+
+// SDK adapter
+import { createSDKQueryBuilder } from 'fireberry-api-client/sdk';
+```
 
 ## Quick Start
 
