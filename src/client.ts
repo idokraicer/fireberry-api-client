@@ -199,6 +199,44 @@ export class FireberryClient {
   }
 
   /**
+   * Cleans up expired cache entries (called on write to prevent memory leaks)
+   */
+  private cleanupExpiredCacheEntries(): void {
+    const now = Date.now();
+
+    // Clean query cache
+    if (this.config.cacheQueryResults) {
+      for (const [key, entry] of this.queryCache) {
+        if (now - entry.timestamp >= this.config.queryResultCacheTTL) {
+          this.queryCache.delete(key);
+        }
+      }
+    }
+
+    // Clean metadata caches
+    if (this.config.cacheMetadata) {
+      // Clean objects cache
+      if (this.cacheStore.objects && now - this.cacheStore.objects.timestamp >= this.config.cacheTTL) {
+        this.cacheStore.objects = undefined;
+      }
+
+      // Clean fields cache
+      for (const [key, entry] of this.cacheStore.fields) {
+        if (now - entry.timestamp >= this.config.cacheTTL) {
+          this.cacheStore.fields.delete(key);
+        }
+      }
+
+      // Clean fieldValues cache
+      for (const [key, entry] of this.cacheStore.fieldValues) {
+        if (now - entry.timestamp >= this.config.cacheTTL) {
+          this.cacheStore.fieldValues.delete(key);
+        }
+      }
+    }
+  }
+
+  /**
    * Gets cached data if valid, or undefined if not cached or expired
    */
   getCached<T>(type: 'objects'): T | undefined;
@@ -251,6 +289,9 @@ export class FireberryClient {
     if (!this.config.cacheMetadata) {
       return;
     }
+
+    // Cleanup expired entries on write
+    this.cleanupExpiredCacheEntries();
 
     const now = Date.now();
 
@@ -469,6 +510,8 @@ export class FireberryClient {
 
       // Store in cache if caching is enabled
       if (this.config.cacheQueryResults) {
+        // Cleanup expired entries on write
+        this.cleanupExpiredCacheEntries();
         this.queryCache.set(cacheKey, {
           data: result,
           timestamp: Date.now(),

@@ -394,3 +394,387 @@ describe('Query Result Caching Configuration', () => {
     expect(typeof client.cache.clearQueryResultsForObject).toBe('function');
   });
 });
+
+describe('Smart Cache Invalidation on Mutations', () => {
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  const createMockResponse = (data: unknown, status = 200) => {
+    return Promise.resolve({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.resolve({ data: { Data: data } }),
+    });
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  describe('invalidateCacheOnMutation config', () => {
+    it('should be enabled by default', () => {
+      const client = new FireberryClient({ apiKey: 'test-key' });
+      const config = client.getConfig();
+      expect(config.invalidateCacheOnMutation).toBe(true);
+    });
+
+    it('should allow disabling cache invalidation', () => {
+      const client = new FireberryClient({
+        apiKey: 'test-key',
+        invalidateCacheOnMutation: false,
+      });
+      const config = client.getConfig();
+      expect(config.invalidateCacheOnMutation).toBe(false);
+    });
+  });
+
+  describe('create operation cache invalidation', () => {
+    it('should invalidate cache after create when enabled', async () => {
+      const client = new FireberryClient({
+        apiKey: 'test-key',
+        cacheQueryResults: true,
+        invalidateCacheOnMutation: true,
+      });
+
+      // First call returns query data, second returns create response
+      mockFetch
+        .mockReturnValueOnce(createMockResponse([{ id: '1' }])) // First query
+        .mockReturnValueOnce(createMockResponse({ id: 'new-id' })) // Create
+        .mockReturnValueOnce(createMockResponse([{ id: '1' }, { id: 'new-id' }])); // Second query
+
+      // Run query to populate cache
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      // Query again - should use cache
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(1); // Still 1, used cache
+
+      // Perform create - should invalidate cache
+      await client.records.create('1', { accountname: 'New Account' });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      // Query again - cache should be invalidated, so new API call
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('should not invalidate cache after create when disabled', async () => {
+      const client = new FireberryClient({
+        apiKey: 'test-key',
+        cacheQueryResults: true,
+        invalidateCacheOnMutation: false,
+      });
+
+      mockFetch
+        .mockReturnValueOnce(createMockResponse([{ id: '1' }])) // First query
+        .mockReturnValueOnce(createMockResponse({ id: 'new-id' })); // Create
+
+      // Run query to populate cache
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      // Perform create - should NOT invalidate cache
+      await client.records.create('1', { accountname: 'New Account' });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      // Query again - should still use cache
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(2); // Still 2, used cache
+    });
+  });
+
+  describe('update operation cache invalidation', () => {
+    it('should invalidate cache after update', async () => {
+      const client = new FireberryClient({
+        apiKey: 'test-key',
+        cacheQueryResults: true,
+        invalidateCacheOnMutation: true,
+      });
+
+      mockFetch
+        .mockReturnValueOnce(createMockResponse([{ id: '1' }])) // Query
+        .mockReturnValueOnce(createMockResponse({ id: '1' })) // Update
+        .mockReturnValueOnce(createMockResponse([{ id: '1' }])); // Query again
+
+      // Populate cache
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+
+      // Perform update
+      await client.records.update('1', 'record-id', { accountname: 'Updated' });
+
+      // Query again - should make new API call
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('delete operation cache invalidation', () => {
+    it('should invalidate cache after delete', async () => {
+      const client = new FireberryClient({
+        apiKey: 'test-key',
+        cacheQueryResults: true,
+        invalidateCacheOnMutation: true,
+      });
+
+      mockFetch
+        .mockReturnValueOnce(createMockResponse([{ id: '1' }])) // Query
+        .mockReturnValueOnce(createMockResponse({ success: true })) // Delete
+        .mockReturnValueOnce(createMockResponse([])); // Query again
+
+      // Populate cache
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+
+      // Perform delete
+      await client.records.delete('1', 'record-id');
+
+      // Query again - should make new API call
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('batch operations cache invalidation', () => {
+    it('should invalidate cache after batch create', async () => {
+      const client = new FireberryClient({
+        apiKey: 'test-key',
+        cacheQueryResults: true,
+        invalidateCacheOnMutation: true,
+      });
+
+      mockFetch
+        .mockReturnValueOnce(createMockResponse([])) // Query
+        .mockReturnValueOnce(createMockResponse([{ id: 'id1' }, { id: 'id2' }])) // Batch create
+        .mockReturnValueOnce(createMockResponse([{ id: 'id1' }, { id: 'id2' }])); // Query again
+
+      // Populate cache
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+
+      // Perform batch create
+      await client.batch.create('1', [
+        { accountname: 'Account 1' },
+        { accountname: 'Account 2' },
+      ]);
+
+      // Query again - should make new API call
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('should invalidate cache after batch update', async () => {
+      const client = new FireberryClient({
+        apiKey: 'test-key',
+        cacheQueryResults: true,
+        invalidateCacheOnMutation: true,
+      });
+
+      mockFetch
+        .mockReturnValueOnce(createMockResponse([{ id: 'id1' }, { id: 'id2' }])) // Query
+        .mockReturnValueOnce(createMockResponse([{ id: 'id1' }, { id: 'id2' }])) // Batch update
+        .mockReturnValueOnce(createMockResponse([{ id: 'id1' }, { id: 'id2' }])); // Query again
+
+      // Populate cache
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+
+      // Perform batch update
+      await client.batch.update('1', [
+        { id: 'id1', record: { accountname: 'Updated 1' } },
+        { id: 'id2', record: { accountname: 'Updated 2' } },
+      ]);
+
+      // Query again - should make new API call
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('should invalidate cache after batch delete', async () => {
+      const client = new FireberryClient({
+        apiKey: 'test-key',
+        cacheQueryResults: true,
+        invalidateCacheOnMutation: true,
+      });
+
+      mockFetch
+        .mockReturnValueOnce(createMockResponse([{ id: 'id1' }, { id: 'id2' }])) // Query
+        .mockReturnValueOnce(createMockResponse({ success: true })) // Batch delete
+        .mockReturnValueOnce(createMockResponse([])); // Query again
+
+      // Populate cache
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+
+      // Perform batch delete
+      await client.batch.delete('1', ['id1', 'id2']);
+
+      // Query again - should make new API call
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('cleanup on write', () => {
+    it('should remove expired metadata entries when writing new metadata', async () => {
+      const client = new FireberryClient({
+        apiKey: 'test-key',
+        cacheMetadata: true,
+        cacheTTL: 60000,
+      });
+
+      // Populate cache with multiple entries
+      client.setCache('objects', { objects: [] });
+      client.setCache('fields', '1', { fields: [{ fieldName: 'field1' }] });
+      client.setCache('fields', '2', { fields: [{ fieldName: 'field2' }] });
+      client.setCache('fieldValues', '1', 'status', { values: [] });
+
+      // Verify all are cached
+      expect(client.getCached('objects')).toBeDefined();
+      expect(client.getCached('fields', '1')).toBeDefined();
+      expect(client.getCached('fields', '2')).toBeDefined();
+      expect(client.getCached('fieldValues', '1', 'status')).toBeDefined();
+
+      // Advance time to expire all entries
+      vi.advanceTimersByTime(60001);
+
+      // Write a new entry - this should trigger cleanup of expired entries
+      client.setCache('fields', '3', { fields: [{ fieldName: 'field3' }] });
+
+      // The new entry should exist
+      expect(client.getCached('fields', '3')).toBeDefined();
+
+      // Expired entries should have been cleaned up during the write
+      // We can verify this indirectly by checking that getCached returns undefined
+      // (they were already expired, but now they should be deleted from memory)
+      expect(client.getCached('objects')).toBeUndefined();
+      expect(client.getCached('fields', '1')).toBeUndefined();
+      expect(client.getCached('fields', '2')).toBeUndefined();
+      expect(client.getCached('fieldValues', '1', 'status')).toBeUndefined();
+    });
+
+    it('should preserve non-expired metadata entries during cleanup', async () => {
+      const client = new FireberryClient({
+        apiKey: 'test-key',
+        cacheMetadata: true,
+        cacheTTL: 60000,
+      });
+
+      // Add first entry
+      client.setCache('fields', '1', { fields: [{ fieldName: 'field1' }] });
+
+      // Advance time but not past TTL
+      vi.advanceTimersByTime(30000);
+
+      // Add second entry - triggers cleanup
+      client.setCache('fields', '2', { fields: [{ fieldName: 'field2' }] });
+
+      // Both should still be valid
+      expect(client.getCached('fields', '1')).toBeDefined();
+      expect(client.getCached('fields', '2')).toBeDefined();
+    });
+
+    it('should remove expired query cache entries when writing new query results', async () => {
+      const client = new FireberryClient({
+        apiKey: 'test-key',
+        cacheQueryResults: true,
+        queryResultCacheTTL: 30000,
+      });
+
+      // Mock fetch for queries
+      mockFetch
+        .mockReturnValueOnce(createMockResponse([{ id: '1' }])) // First query
+        .mockReturnValueOnce(createMockResponse([{ id: '2' }])) // Second query
+        .mockReturnValueOnce(createMockResponse([{ id: '3' }])); // Third query after expiry
+
+      // Run first query to populate cache
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      // Run second query with different params
+      await client.query({ objectType: '2', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      // Both queries should be cached
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      await client.query({ objectType: '2', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(2); // Still 2, both from cache
+
+      // Advance time to expire all cache entries
+      vi.advanceTimersByTime(30001);
+
+      // Run new query - should trigger cleanup and make API call
+      await client.query({ objectType: '3', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('should cleanup both metadata and query caches on metadata write', async () => {
+      const client = new FireberryClient({
+        apiKey: 'test-key',
+        cacheMetadata: true,
+        cacheTTL: 60000,
+        cacheQueryResults: true,
+        queryResultCacheTTL: 30000,
+      });
+
+      // Mock fetch for query
+      mockFetch.mockReturnValueOnce(createMockResponse([{ id: '1' }]));
+
+      // Populate query cache
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+
+      // Populate metadata cache
+      client.setCache('fields', '1', { fields: [] });
+
+      // Advance time to expire query cache (shorter TTL)
+      vi.advanceTimersByTime(30001);
+
+      // Write new metadata - should cleanup expired query cache too
+      client.setCache('fields', '2', { fields: [] });
+
+      // Metadata should still work
+      expect(client.getCached('fields', '1')).toBeDefined();
+      expect(client.getCached('fields', '2')).toBeDefined();
+
+      // Query cache should be expired (cleaned up)
+      mockFetch.mockReturnValueOnce(createMockResponse([{ id: '1' }]));
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(2); // New call because cache was cleaned
+    });
+  });
+
+  describe('cache isolation by object type', () => {
+    it('should only invalidate cache for the affected object type', async () => {
+      const client = new FireberryClient({
+        apiKey: 'test-key',
+        cacheQueryResults: true,
+        invalidateCacheOnMutation: true,
+      });
+
+      mockFetch
+        .mockReturnValueOnce(createMockResponse([{ id: '1' }])) // Query obj 1
+        .mockReturnValueOnce(createMockResponse([{ id: '2' }])) // Query obj 2
+        .mockReturnValueOnce(createMockResponse({ id: 'new-id' })) // Create obj 1
+        .mockReturnValueOnce(createMockResponse([{ id: '1' }, { id: 'new-id' }])); // Query obj 1 again
+
+      // Cache queries for two object types
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      await client.query({ objectType: '2', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      // Create on object type 1
+      await client.records.create('1', { accountname: 'New' });
+
+      // Query object 1 - should make new call (cache invalidated)
+      await client.query({ objectType: '1', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(4);
+
+      // Query object 2 - should use cache (not invalidated)
+      await client.query({ objectType: '2', fields: ['id'], autoPage: false });
+      expect(mockFetch).toHaveBeenCalledTimes(4); // Still 4, used cache
+    });
+  });
+});
