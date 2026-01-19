@@ -1002,4 +1002,224 @@ describe('QueryBuilder', () => {
       expect(result.metadata.fields).toEqual(['*']);
     });
   });
+
+  describe('explain()', () => {
+    it('should return explanation without executing query', () => {
+      const result = new QueryBuilder()
+        .objectType('1')
+        .select('accountid', 'accountname')
+        .where('statuscode').equals('1')
+        .limit(100)
+        .explain();
+
+      expect(result.objectType).toBe('1');
+      expect(result.query).toBe('(statuscode = 1)');
+      expect(result.fields).toEqual(['accountid', 'accountname']);
+      expect(result.limit).toBe(100);
+    });
+
+    it('should indicate when objectType is not set', () => {
+      const result = new QueryBuilder()
+        .select('accountid')
+        .where('statuscode').equals('1')
+        .explain();
+
+      expect(result.objectType).toBe('(not set)');
+      expect(result.warnings).toContain('Object type is not set. Call .objectType() before executing.');
+    });
+
+    it('should detect wildcard fields', () => {
+      const result = new QueryBuilder()
+        .objectType('1')
+        .select('*')
+        .explain();
+
+      expect(result.usesWildcard).toBe(true);
+      expect(result.warnings).toContain('Using wildcard (*) fields may include unnecessary data and slow down queries.');
+    });
+
+    it('should not warn about wildcard when specific fields are used', () => {
+      const result = new QueryBuilder()
+        .objectType('1')
+        .select('accountid', 'accountname')
+        .explain();
+
+      expect(result.usesWildcard).toBe(false);
+      const wildcardWarnings = result.warnings.filter(w => w.includes('wildcard'));
+      expect(wildcardWarnings).toHaveLength(0);
+    });
+
+    it('should detect willAutoPage based on limit', () => {
+      // No limit means auto-page
+      const resultNoLimit = new QueryBuilder()
+        .objectType('1')
+        .explain();
+
+      expect(resultNoLimit.willAutoPage).toBe(true);
+
+      // With limit, no auto-page
+      const resultWithLimit = new QueryBuilder()
+        .objectType('1')
+        .limit(100)
+        .explain();
+
+      expect(resultWithLimit.willAutoPage).toBe(false);
+    });
+
+    it('should include sorting info', () => {
+      const result = new QueryBuilder()
+        .objectType('1')
+        .sortBy('createdon', 'asc')
+        .explain();
+
+      expect(result.sorting.field).toBe('createdon');
+      expect(result.sorting.direction).toBe('asc');
+    });
+
+    it('should use default sorting when not specified', () => {
+      const result = new QueryBuilder()
+        .objectType('1')
+        .explain();
+
+      expect(result.sorting.field).toBe('modifiedon');
+      expect(result.sorting.direction).toBe('desc');
+    });
+
+    it('should count conditions', () => {
+      const result = new QueryBuilder()
+        .objectType('1')
+        .where('statuscode').equals('1')
+        .and()
+        .where('name').contains('Acme')
+        .or()
+        .where('revenue').greaterThan(1000)
+        .explain();
+
+      expect(result.conditionCount).toBe(3);
+    });
+
+    it('should return (no conditions) query when no conditions set', () => {
+      const result = new QueryBuilder()
+        .objectType('1')
+        .explain();
+
+      expect(result.conditionCount).toBe(0);
+      expect(result.query).toBe('(no conditions)');
+    });
+
+    it('should estimate API calls based on limit', () => {
+      // With limit of 100 and default pageSize 500, expect 1 call
+      const result1 = new QueryBuilder()
+        .objectType('1')
+        .limit(100)
+        .explain();
+
+      expect(result1.estimatedApiCalls).toBe(1);
+
+      // With limit of 1000 and default pageSize 500, expect 2 calls
+      const result2 = new QueryBuilder()
+        .objectType('1')
+        .limit(1000)
+        .explain();
+
+      expect(result2.estimatedApiCalls).toBe(2);
+    });
+
+    it('should return -1 for API calls when no limit and no conditions', () => {
+      const result = new QueryBuilder()
+        .objectType('1')
+        .explain();
+
+      // Without limit and conditions, can't estimate calls
+      expect(result.estimatedApiCalls).toBe(-1);
+    });
+
+    it('should track showRealValue setting', () => {
+      // Default is true
+      const resultDefault = new QueryBuilder()
+        .objectType('1')
+        .explain();
+
+      expect(resultDefault.showRealValue).toBe(true);
+
+      // Explicitly set to false
+      const resultFalse = new QueryBuilder()
+        .objectType('1')
+        .showRealValue(false)
+        .explain();
+
+      expect(resultFalse.showRealValue).toBe(false);
+    });
+
+    it('should provide suggestions for optimization', () => {
+      const result = new QueryBuilder()
+        .objectType('1')
+        .select('*')
+        .explain();
+
+      expect(result.suggestions.length).toBeGreaterThan(0);
+      expect(result.suggestions).toContain('Consider selecting only the specific fields you need with .select()');
+    });
+
+    it('should warn about missing conditions for large datasets', () => {
+      const result = new QueryBuilder()
+        .objectType('1')
+        .explain();
+
+      expect(result.warnings).toContain('No query conditions or limit set. This may return a large number of records.');
+    });
+
+    it('should not warn about missing conditions when limit is set', () => {
+      const result = new QueryBuilder()
+        .objectType('1')
+        .limit(100)
+        .explain();
+
+      expect(result.warnings).not.toContain('No query conditions or limit set. This may return a large number of records.');
+    });
+
+    it('should include page size info', () => {
+      const result = new QueryBuilder()
+        .objectType('1')
+        .explain();
+
+      expect(result.pageSize).toBe(500);
+    });
+
+    it('should handle null limit correctly', () => {
+      const result = new QueryBuilder()
+        .objectType('1')
+        .explain();
+
+      expect(result.limit).toBeNull();
+    });
+
+    it('should work with complex queries', () => {
+      const result = new QueryBuilder()
+        .objectType('1')
+        .select('accountid', 'accountname', 'statuscode')
+        .where('statuscode').equals('1')
+        .and()
+        .where('accountname').startsWith('Acme')
+        .and()
+        .where('revenue').greaterThan(10000)
+        .or()
+        .where('primarycontactid').isNotNull()
+        .sortBy('createdon', 'desc')
+        .limit(50)
+        .showRealValue(false)
+        .explain();
+
+      expect(result.objectType).toBe('1');
+      expect(result.fields).toEqual(['accountid', 'accountname', 'statuscode']);
+      expect(result.conditionCount).toBe(4);
+      expect(result.limit).toBe(50);
+      expect(result.pageSize).toBe(500);
+      expect(result.showRealValue).toBe(false);
+      expect(result.willAutoPage).toBe(false);
+      expect(result.sorting.field).toBe('createdon');
+      expect(result.sorting.direction).toBe('desc');
+      expect(result.usesWildcard).toBe(false);
+    });
+  });
 });

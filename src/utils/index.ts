@@ -1,5 +1,23 @@
 // Object mapping utilities
-export { getObjectIdFieldName, getNameFieldByObjectType, OBJECT_ID_MAP, OBJECT_NAME_MAP } from './objectMapping';
+export {
+  getObjectIdFieldName,
+  getNameFieldByObjectType,
+  OBJECT_ID_MAP,
+  OBJECT_NAME_MAP,
+  // Related field utilities
+  ID_FIELD_TO_OBJECT_TYPE,
+  getObjectTypeFromReferenceField,
+  parseRelatedField,
+  resolveRelatedField,
+  expandRelatedFields,
+  getRelatedFieldInfo,
+  isCodeField,
+  getCodeFieldFromLabel,
+  getLabelFieldFromCode,
+  isDropdownFieldByMetadata,
+  RelatedFieldResolver,
+} from './objectMapping';
+export type { RelatedFieldInfo, RelatedFieldResolution, FieldMetadataMap } from './objectMapping';
 
 // Field mapping utilities
 export { getLabelFieldForField } from './fieldMapping';

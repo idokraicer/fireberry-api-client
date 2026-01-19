@@ -42,6 +42,18 @@ export {
 // Query builder
 export { QueryBuilder, escapeQueryValue, sanitizeQuery } from './utils/queryBuilder';
 
+// Related field utilities
+export {
+  RelatedFieldResolver,
+  parseRelatedField,
+  resolveRelatedField,
+  expandRelatedFields,
+  getRelatedFieldInfo,
+  getObjectTypeFromReferenceField,
+  ID_FIELD_TO_OBJECT_TYPE,
+} from './utils/relatedFieldMapping';
+export type { RelatedFieldInfo, RelatedFieldResolution, FieldMetadataMap } from './utils/relatedFieldMapping';
+
 // Types - Client
 export type {
   FireberryClientConfig,

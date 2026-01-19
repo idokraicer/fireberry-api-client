@@ -8,3 +8,24 @@
 // Re-export from constants
 export { getObjectIdFieldName, OBJECT_ID_MAP } from '../constants/objectIds';
 export { getNameFieldByObjectType, OBJECT_NAME_MAP } from '../constants/objectNames';
+
+// Re-export related field utilities
+export {
+  ID_FIELD_TO_OBJECT_TYPE,
+  getObjectTypeFromReferenceField,
+  parseRelatedField,
+  resolveRelatedField,
+  expandRelatedFields,
+  getRelatedFieldInfo,
+  isCodeField,
+  getCodeFieldFromLabel,
+  getLabelFieldFromCode,
+  isDropdownFieldByMetadata,
+  RelatedFieldResolver,
+} from './relatedFieldMapping';
+
+export type {
+  RelatedFieldInfo,
+  RelatedFieldResolution,
+  FieldMetadataMap,
+} from './relatedFieldMapping';
