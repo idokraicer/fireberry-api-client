@@ -16,8 +16,18 @@ export interface FireberryClientConfig {
   retryDelay?: number;
   /** Enable in-memory metadata cache (default: false) */
   cacheMetadata?: boolean;
-  /** Cache TTL in milliseconds (default: 300000 = 5 minutes) */
+  /** Metadata cache TTL in milliseconds (default: 300000 = 5 minutes) */
   cacheTTL?: number;
+  /** Enable query result caching (default: false) */
+  cacheQueryResults?: boolean;
+  /** Query result cache TTL in milliseconds (default: 60000 = 1 minute) */
+  queryResultCacheTTL?: number;
+  /**
+   * Automatically invalidate query cache when mutations occur (default: true)
+   * When enabled, create/update/delete operations will automatically clear
+   * the query result cache for the affected object type.
+   */
+  invalidateCacheOnMutation?: boolean;
 }
 
 /**

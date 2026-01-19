@@ -9,6 +9,8 @@ export type {
 export type {
   QueryOptions,
   QueryResult,
+  QueryMetadata,
+  QueryResultWithMetadata,
   QueryConditionItem,
   QuerySeparatorItem,
   QueryItem,

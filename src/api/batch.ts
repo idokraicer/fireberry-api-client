@@ -69,6 +69,9 @@ export class BatchAPI {
       }
     }
 
+    // Smart cache invalidation
+    this.client.invalidateCacheForMutation(objectTypeStr);
+
     return {
       success: true,
       data: allResponses,
@@ -124,6 +127,9 @@ export class BatchAPI {
       }
     }
 
+    // Smart cache invalidation
+    this.client.invalidateCacheForMutation(objectTypeStr);
+
     return {
       success: true,
       data: allResponses,
@@ -170,6 +176,9 @@ export class BatchAPI {
 
       allDeletedIds.push(...batch);
     }
+
+    // Smart cache invalidation
+    this.client.invalidateCacheForMutation(objectTypeStr);
 
     return {
       success: true,

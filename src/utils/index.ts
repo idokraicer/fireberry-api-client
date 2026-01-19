@@ -28,7 +28,36 @@ export {
 } from './helpers';
 
 // Query builder utilities
-export { QueryBuilder, escapeQueryValue, sanitizeQuery, isPureDate, addDays, type ConditionBuilder } from './queryBuilder';
+export {
+  QueryBuilder,
+  escapeQueryValue,
+  sanitizeQuery,
+  isPureDate,
+  addDays,
+  getToday,
+  getStartOfWeek,
+  getStartOfMonth,
+  type ConditionBuilder,
+  type DateConditionBuilder,
+} from './queryBuilder';
+
+// Schema generator
+export {
+  generateSchema,
+  schemaBuilder,
+  SchemaBuilder,
+  type SchemaGeneratorOptions,
+  type SchemaGeneratorResult,
+} from './schemaGenerator';
+
+// ERD generator
+export {
+  erdBuilder,
+  ERDBuilder,
+  generateFireberryERD,
+  type ERDSettings,
+  type ERDResult,
+} from './erdGenerator';
 
 // Re-export constants for convenience
 export {

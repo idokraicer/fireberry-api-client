@@ -1,4 +1,4 @@
-import type { QueryOperator } from '../types/query';
+import type { QueryOperator, QueryMetadata, QueryResultWithMetadata, QueryExplainResult } from '../types/query';
 import { getObjectIdFieldName } from '../constants/objectIds';
 
 /**
@@ -137,6 +137,67 @@ export function sanitizeQuery(query: string): string {
 }
 
 /**
+ * Gets today's date in YYYY-MM-DD format
+ */
+export function getToday(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Gets the start of current week (Monday) in YYYY-MM-DD format
+ */
+export function getStartOfWeek(): string {
+  const now = new Date();
+  const day = now.getDay();
+  // Adjust so Monday is first day (day 0 = Sunday, so Monday = 1)
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(now);
+  monday.setDate(diff);
+  const year = monday.getFullYear();
+  const month = String(monday.getMonth() + 1).padStart(2, '0');
+  const dayStr = String(monday.getDate()).padStart(2, '0');
+  return `${year}-${month}-${dayStr}`;
+}
+
+/**
+ * Gets the start of current month in YYYY-MM-DD format
+ */
+export function getStartOfMonth(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}-01`;
+}
+
+/**
+ * Date condition builder for fluent date query construction
+ */
+export interface DateConditionBuilder {
+  /** Records from today */
+  today(): QueryBuilder;
+  /** Records from this week (Monday to now) */
+  thisWeek(): QueryBuilder;
+  /** Records from this month */
+  thisMonth(): QueryBuilder;
+  /** Records between two dates (inclusive) */
+  between(startDate: string, endDate: string): QueryBuilder;
+  /** Records from the last N days (including today) */
+  daysAgo(days: number): QueryBuilder;
+  /** Records before date */
+  before(date: string): QueryBuilder;
+  /** Records after date */
+  after(date: string): QueryBuilder;
+  /** Records on or before date */
+  onOrBefore(date: string): QueryBuilder;
+  /** Records on or after date */
+  onOrAfter(date: string): QueryBuilder;
+}
+
+/**
  * Condition builder for fluent query construction
  */
 export interface ConditionBuilder {
@@ -144,6 +205,8 @@ export interface ConditionBuilder {
   equals(value: string | number): QueryBuilder;
   /** Not equals comparison (!=) */
   notEquals(value: string | number): QueryBuilder;
+  /** IN comparison - matches any of the provided values (joined with OR) */
+  in(values: (string | number)[]): QueryBuilder;
   /** Less than comparison (<) - works with numbers and dates */
   lessThan(value: string | number): QueryBuilder;
   /** Greater than comparison (>) - works with numbers and dates */
@@ -272,6 +335,29 @@ export class QueryBuilder {
   }
 
   /**
+   * Starts a new WHERE condition for a date field with date-specific helpers
+   * @param field - Date field name to filter on
+   *
+   * @example
+   * ```typescript
+   * // Records created today
+   * qb.whereDate('createdon').today()
+   *
+   * // Records from this week
+   * qb.whereDate('createdon').thisWeek()
+   *
+   * // Records from the last 30 days
+   * qb.whereDate('createdon').daysAgo(30)
+   *
+   * // Records between two dates
+   * qb.whereDate('createdon').between('2024-01-01', '2024-12-31')
+   * ```
+   */
+  whereDate(field: string): DateConditionBuilder {
+    return this.createDateConditionBuilder(field);
+  }
+
+  /**
    * Adds a WHERE condition for the primary ID field, automatically mapped based on object type
    * @param value - The ID value to match
    * @throws Error if objectType is not set
@@ -343,6 +429,37 @@ export class QueryBuilder {
       this.addCondition(idField, '=', String(values[i]));
     }
 
+    return this;
+  }
+
+  /**
+   * Adds a WHERE IN condition for a field with multiple values, joined with OR
+   * @param field - Field name to filter on
+   * @param values - Array of values to match
+   * @throws Error if values array is empty
+   *
+   * @example
+   * ```typescript
+   * // Query accounts with specific status codes:
+   * new QueryBuilder(client)
+   *   .objectType(1)
+   *   .whereIn('statuscode', [1, 2, 3])
+   *   .execute();
+   *
+   * // Generates: (statuscode = 1) or (statuscode = 2) or (statuscode = 3)
+   * ```
+   */
+  whereIn(field: string, values: (string | number)[]): this {
+    if (!values || values.length === 0) {
+      throw new Error('whereIn() requires at least one value.');
+    }
+    // Add first condition
+    this.addCondition(field, '=', String(values[0]));
+    // Add remaining conditions with OR
+    for (let i = 1; i < values.length; i++) {
+      this.joinOperators.push('or');
+      this.addCondition(field, '=', String(values[i]));
+    }
     return this;
   }
 
@@ -485,6 +602,77 @@ export class QueryBuilder {
   }
 
   /**
+   * Executes the query and returns the count of matching records
+   * Uses minimal field selection (ID only) for efficiency
+   * @param signal - Optional AbortSignal for cancellation
+   * @returns Number of matching records
+   *
+   * @example
+   * ```typescript
+   * const activeCount = await client.queryBuilder()
+   *   .objectType(1)
+   *   .where('statuscode').equals('1')
+   *   .count();
+   *
+   * console.log(`Found ${activeCount} active accounts`);
+   * ```
+   */
+  async count(signal?: AbortSignal): Promise<number> {
+    if (!this.client) {
+      throw new Error('QueryBuilder requires a client to execute queries. Pass a FireberryClient to the constructor.');
+    }
+
+    if (!this.objectTypeId) {
+      throw new Error('Object type is required. Use .objectType() before executing.');
+    }
+
+    // Use minimal fields for efficiency - just get the ID field
+    const idField = getObjectIdFieldName(this.objectTypeId);
+
+    const result = await this.client.query({
+      objectType: this.objectTypeId,
+      fields: [idField],
+      query: this.build(),
+      showRealValue: false, // No need for labels
+      signal,
+    });
+
+    return result.total;
+  }
+
+  /**
+   * Executes the query and returns the first record or null
+   * Automatically sets limit to 1 for efficiency
+   * @param signal - Optional AbortSignal for cancellation
+   * @returns First record or null if no records found
+   *
+   * @example
+   * ```typescript
+   * const account = await client.queryBuilder()
+   *   .objectType(1)
+   *   .where('accountname').equals('Acme Corp')
+   *   .first();
+   *
+   * if (account) {
+   *   console.log(account.accountid);
+   * }
+   * ```
+   */
+  async first(signal?: AbortSignal): Promise<Record<string, unknown> | null> {
+    // Temporarily set limit to 1 for efficiency
+    const originalLimit = this.limitValue;
+    this.limitValue = 1;
+
+    try {
+      const result = await this.execute(signal);
+      return result.records[0] ?? null;
+    } finally {
+      // Restore original limit
+      this.limitValue = originalLimit;
+    }
+  }
+
+  /**
    * Executes the query (requires client to be set)
    * @param signal - Optional AbortSignal for cancellation
    * @returns Query results
@@ -526,6 +714,200 @@ export class QueryBuilder {
   }
 
   /**
+   * Executes the query and returns results with debugging metadata
+   * Includes query string, fields, pagination info, and execution time
+   * @param signal - Optional AbortSignal for cancellation
+   * @returns Query results with metadata
+   *
+   * @example
+   * ```typescript
+   * const result = await client.queryBuilder()
+   *   .objectType(1)
+   *   .select('accountid', 'accountname')
+   *   .where('statuscode').equals('1')
+   *   .executeWithDebug();
+   *
+   * console.log('Query:', result.metadata.queryString);
+   * console.log('Fields:', result.metadata.fields);
+   * console.log('Execution time:', result.metadata.executionTimeMs, 'ms');
+   * console.log('Records:', result.records.length);
+   * ```
+   */
+  async executeWithDebug(signal?: AbortSignal): Promise<QueryResultWithMetadata> {
+    if (!this.client) {
+      throw new Error('QueryBuilder requires a client to execute queries. Pass a FireberryClient to the constructor.');
+    }
+
+    if (!this.objectTypeId) {
+      throw new Error('Object type is required. Use .objectType() before executing.');
+    }
+
+    const startTime = Date.now();
+    const fields = this.selectedFields.length > 0 ? this.selectedFields : ['*'];
+    const queryString = this.build();
+
+    const queryOptions: Parameters<QueryClient['query']>[0] = {
+      objectType: this.objectTypeId,
+      fields,
+      query: queryString,
+      showRealValue: this.showRealValueFlag,
+    };
+
+    if (this.sortByField) {
+      queryOptions.sortBy = this.sortByField;
+      queryOptions.sortType = this.sortDirection;
+    }
+
+    if (this.limitValue !== null) {
+      queryOptions.limit = this.limitValue;
+    }
+
+    if (this.pageNumber > 1) {
+      queryOptions.page = this.pageNumber;
+    }
+
+    if (signal) {
+      queryOptions.signal = signal;
+    }
+
+    const result = await this.client.query(queryOptions);
+    const executionTimeMs = Date.now() - startTime;
+
+    const metadata: QueryMetadata = {
+      objectType: this.objectTypeId,
+      fields,
+      queryString,
+      pageNumber: this.pageNumber,
+      pageSize: this.limitValue ?? 500,
+      autoPage: true, // Default behavior
+      executionTimeMs,
+    };
+
+    if (this.sortByField) {
+      metadata.sortBy = this.sortByField;
+      metadata.sortType = this.sortDirection;
+    }
+
+    if (this.limitValue !== null) {
+      metadata.limit = this.limitValue;
+    }
+
+    return {
+      ...result,
+      metadata,
+    };
+  }
+
+  /**
+   * Analyzes the query without executing it (dry run)
+   * Returns information about what the query will do, potential issues, and optimization suggestions
+   *
+   * @returns Query analysis with warnings and suggestions
+   *
+   * @example
+   * ```typescript
+   * const analysis = client.queryBuilder()
+   *   .objectType('1')
+   *   .select('*')
+   *   .where('statuscode').equals('1')
+   *   .explain();
+   *
+   * console.log('Query:', analysis.query);
+   * console.log('Warnings:', analysis.warnings);
+   * console.log('Suggestions:', analysis.suggestions);
+   * console.log('Estimated API calls:', analysis.estimatedApiCalls);
+   * ```
+   */
+  explain(): QueryExplainResult {
+    const warnings: string[] = [];
+    const suggestions: string[] = [];
+
+    // Check object type
+    if (!this.objectTypeId) {
+      warnings.push('Object type is not set. Call .objectType() before executing.');
+    }
+
+    // Analyze fields
+    const fields = this.selectedFields.length > 0 ? this.selectedFields : ['*'];
+    const usesWildcard = fields.includes('*') || fields.length === 0;
+
+    if (usesWildcard) {
+      warnings.push('Using wildcard (*) fields may include unnecessary data and slow down queries.');
+      suggestions.push('Consider selecting only the specific fields you need with .select()');
+    }
+
+    // Analyze query
+    const queryString = this.build();
+    const conditionCount = this.conditions.length;
+
+    if (conditionCount === 0 && !this.limitValue) {
+      warnings.push('No query conditions or limit set. This may return a large number of records.');
+      suggestions.push('Add filters with .where() or set a .limit() to control result size.');
+    }
+
+    // Check for potential performance issues
+    const hasContainsOperator = this.conditions.some(
+      (c) => c.operator === 'start-with' && c.value?.startsWith('%'),
+    );
+    if (hasContainsOperator) {
+      warnings.push('Contains queries (using % prefix) may be slower than exact matches.');
+    }
+
+    // Check for OR conditions (may affect performance)
+    const hasOrConditions = this.joinOperators.some((op) => op === 'or');
+    if (hasOrConditions && conditionCount > 5) {
+      warnings.push('Multiple OR conditions may affect query performance.');
+      suggestions.push('Consider breaking into separate queries if possible.');
+    }
+
+    // Sorting analysis
+    const sortField = this.sortByField || 'modifiedon';
+    const sortDirection = this.sortDirection;
+
+    // Estimate API calls
+    let estimatedApiCalls = 1;
+    const pageSize = 500; // Default page size
+    const willAutoPage = this.limitValue === null; // Auto-page when no limit
+
+    if (willAutoPage && conditionCount === 0) {
+      // Without conditions, could be many pages
+      estimatedApiCalls = -1; // Unknown/many
+      warnings.push('Without filters, query may require many API calls for pagination.');
+    } else if (this.limitValue !== null) {
+      estimatedApiCalls = Math.ceil(this.limitValue / pageSize);
+    }
+
+    // Check for missing index hints
+    if (!this.sortByField && conditionCount > 0) {
+      suggestions.push('Consider adding .sortBy() to control result ordering.');
+    }
+
+    // Check showRealValue impact
+    if (this.showRealValueFlag) {
+      suggestions.push('showRealValue is enabled (default). Set .showRealValue(false) if you only need IDs.');
+    }
+
+    return {
+      objectType: this.objectTypeId || '(not set)',
+      query: queryString || '(no conditions)',
+      fields,
+      usesWildcard,
+      willAutoPage,
+      limit: this.limitValue,
+      pageSize,
+      sorting: {
+        field: sortField,
+        direction: sortDirection,
+      },
+      estimatedApiCalls,
+      warnings,
+      suggestions,
+      conditionCount,
+      showRealValue: this.showRealValueFlag,
+    };
+  }
+
+  /**
    * Creates a condition builder for the current field
    */
   private createConditionBuilder(): ConditionBuilder {
@@ -538,6 +920,19 @@ export class QueryBuilder {
       },
       notEquals: (value: string | number): QueryBuilder => {
         this.addCondition(field, '!=', String(value));
+        return this;
+      },
+      in: (values: (string | number)[]): QueryBuilder => {
+        if (!values || values.length === 0) {
+          throw new Error('in() requires at least one value.');
+        }
+        // Add first condition
+        this.addCondition(field, '=', String(values[0]));
+        // Add remaining conditions with OR
+        for (let i = 1; i < values.length; i++) {
+          this.joinOperators.push('or');
+          this.addCondition(field, '=', String(values[i]));
+        }
         return this;
       },
       lessThan: (value: string | number): QueryBuilder => {
@@ -589,6 +984,81 @@ export class QueryBuilder {
       },
       isNotNull: (): QueryBuilder => {
         this.addCondition(field, 'is-not-null');
+        return this;
+      },
+    };
+  }
+
+  /**
+   * Creates a date condition builder for the specified field
+   */
+  private createDateConditionBuilder(field: string): DateConditionBuilder {
+    return {
+      today: (): QueryBuilder => {
+        const today = getToday();
+        // Records from today: >= today AND < tomorrow
+        this.addCondition(field, '>=', today);
+        this.joinOperators.push('and');
+        this.addCondition(field, '<', addDays(today, 1));
+        return this;
+      },
+      thisWeek: (): QueryBuilder => {
+        const startOfWeek = getStartOfWeek();
+        const tomorrow = addDays(getToday(), 1);
+        // Records from start of week to now: >= monday AND < tomorrow
+        this.addCondition(field, '>=', startOfWeek);
+        this.joinOperators.push('and');
+        this.addCondition(field, '<', tomorrow);
+        return this;
+      },
+      thisMonth: (): QueryBuilder => {
+        const startOfMonth = getStartOfMonth();
+        const tomorrow = addDays(getToday(), 1);
+        // Records from start of month to now: >= first day AND < tomorrow
+        this.addCondition(field, '>=', startOfMonth);
+        this.joinOperators.push('and');
+        this.addCondition(field, '<', tomorrow);
+        return this;
+      },
+      between: (startDate: string, endDate: string): QueryBuilder => {
+        // Records between dates (inclusive): >= start AND < day after end
+        this.addCondition(field, '>=', startDate);
+        this.joinOperators.push('and');
+        // Use < next day for inclusive end date (handles API quirk)
+        const dayAfterEnd = isPureDate(endDate) ? addDays(endDate, 1) : endDate;
+        this.addCondition(field, '<', dayAfterEnd);
+        return this;
+      },
+      daysAgo: (days: number): QueryBuilder => {
+        const today = getToday();
+        const startDate = addDays(today, -days);
+        const tomorrow = addDays(today, 1);
+        // Records from N days ago to now: >= (today - N) AND < tomorrow
+        this.addCondition(field, '>=', startDate);
+        this.joinOperators.push('and');
+        this.addCondition(field, '<', tomorrow);
+        return this;
+      },
+      before: (date: string): QueryBuilder => {
+        this.addCondition(field, '<', date);
+        return this;
+      },
+      after: (date: string): QueryBuilder => {
+        // After a date means > end of that day
+        // For pure dates, use > date (API treats as > midnight, so actually > end of previous day)
+        // We need >= next day for "after" to work correctly
+        const nextDay = isPureDate(date) ? addDays(date, 1) : date;
+        this.addCondition(field, '>=', nextDay);
+        return this;
+      },
+      onOrBefore: (date: string): QueryBuilder => {
+        // Use < next day for inclusive (handles API quirk with <=)
+        const nextDay = isPureDate(date) ? addDays(date, 1) : date;
+        this.addCondition(field, '<', nextDay);
+        return this;
+      },
+      onOrAfter: (date: string): QueryBuilder => {
+        this.addCondition(field, '>=', date);
         return this;
       },
     };

@@ -57,6 +57,7 @@ export type {
   QuerySeparatorItem,
   QueryItem,
   QueryOperator,
+  QueryExplainResult,
 } from './types/query';
 
 // Types - Records

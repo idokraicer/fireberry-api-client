@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { QueryBuilder, escapeQueryValue, sanitizeQuery, isPureDate, addDays } from '../../src/utils/queryBuilder';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { QueryBuilder, escapeQueryValue, sanitizeQuery, isPureDate, addDays, getToday, getStartOfWeek, getStartOfMonth } from '../../src/utils/queryBuilder';
 
 describe('isPureDate', () => {
   it('should return true for YYYY-MM-DD format', () => {
@@ -53,6 +53,30 @@ describe('addDays', () => {
   it('should handle datetime input by extracting date part', () => {
     expect(addDays('2024-01-15T10:30:00', 1)).toBe('2024-01-16');
     expect(addDays('2024-01-15 10:30:00', 1)).toBe('2024-01-16');
+  });
+});
+
+describe('getToday', () => {
+  it('should return today in YYYY-MM-DD format', () => {
+    const today = getToday();
+    expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('getStartOfWeek', () => {
+  it('should return a Monday in YYYY-MM-DD format', () => {
+    const startOfWeek = getStartOfWeek();
+    expect(startOfWeek).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // Verify it's a Monday
+    const date = new Date(startOfWeek);
+    expect(date.getDay()).toBe(1); // 1 = Monday
+  });
+});
+
+describe('getStartOfMonth', () => {
+  it('should return first day of month in YYYY-MM-DD format', () => {
+    const startOfMonth = getStartOfMonth();
+    expect(startOfMonth).toMatch(/^\d{4}-\d{2}-01$/);
   });
 });
 
@@ -531,6 +555,451 @@ describe('QueryBuilder', () => {
         .whereIds(['abc', 123, 'xyz'])
         .build();
       expect(query).toBe('(accountid = abc) or (accountid = 123) or (accountid = xyz)');
+    });
+  });
+
+  describe('whereIn()', () => {
+    it('should throw error when values array is empty', () => {
+      const builder = new QueryBuilder();
+      expect(() => builder.whereIn('statuscode', [])).toThrow(
+        'whereIn() requires at least one value'
+      );
+    });
+
+    it('should handle single value', () => {
+      const query = new QueryBuilder()
+        .whereIn('statuscode', [1])
+        .build();
+      expect(query).toBe('(statuscode = 1)');
+    });
+
+    it('should join multiple values with OR', () => {
+      const query = new QueryBuilder()
+        .whereIn('statuscode', [1, 2, 3])
+        .build();
+      expect(query).toBe('(statuscode = 1) or (statuscode = 2) or (statuscode = 3)');
+    });
+
+    it('should work with string values', () => {
+      const query = new QueryBuilder()
+        .whereIn('name', ['Alice', 'Bob', 'Charlie'])
+        .build();
+      expect(query).toBe('(name = Alice) or (name = Bob) or (name = Charlie)');
+    });
+
+    it('should work with other conditions using and()', () => {
+      const query = new QueryBuilder()
+        .whereIn('statuscode', [1, 2])
+        .and()
+        .where('name').contains('test')
+        .build();
+      expect(query).toBe('(statuscode = 1) or (statuscode = 2) and (name start-with %test)');
+    });
+  });
+
+  describe('where().in()', () => {
+    it('should throw error when values array is empty', () => {
+      const builder = new QueryBuilder();
+      expect(() => builder.where('statuscode').in([])).toThrow(
+        'in() requires at least one value'
+      );
+    });
+
+    it('should handle single value', () => {
+      const query = new QueryBuilder()
+        .where('statuscode').in([1])
+        .build();
+      expect(query).toBe('(statuscode = 1)');
+    });
+
+    it('should join multiple values with OR', () => {
+      const query = new QueryBuilder()
+        .where('statuscode').in([1, 2, 3])
+        .build();
+      expect(query).toBe('(statuscode = 1) or (statuscode = 2) or (statuscode = 3)');
+    });
+
+    it('should work with mixed string and number values', () => {
+      const query = new QueryBuilder()
+        .where('field').in(['a', 1, 'b', 2])
+        .build();
+      expect(query).toBe('(field = a) or (field = 1) or (field = b) or (field = 2)');
+    });
+  });
+
+  describe('count()', () => {
+    it('should throw error when no client is provided', async () => {
+      const builder = new QueryBuilder()
+        .objectType('1')
+        .where('statuscode').equals('1');
+
+      await expect(builder.count()).rejects.toThrow(
+        'QueryBuilder requires a client to execute queries'
+      );
+    });
+
+    it('should throw error when objectType is not set', async () => {
+      const mockClient = {
+        query: async () => ({ records: [], total: 0, success: true }),
+      };
+
+      const builder = new QueryBuilder(mockClient)
+        .where('statuscode').equals('1');
+
+      await expect(builder.count()).rejects.toThrow(
+        'Object type is required'
+      );
+    });
+
+    it('should return count of matching records', async () => {
+      const mockClient = {
+        query: async () => ({ records: [{}, {}, {}], total: 3, success: true }),
+      };
+
+      const result = await new QueryBuilder(mockClient)
+        .objectType('1')
+        .where('statuscode').equals('1')
+        .count();
+
+      expect(result).toBe(3);
+    });
+
+    it('should return 0 when no records match', async () => {
+      const mockClient = {
+        query: async () => ({ records: [], total: 0, success: true }),
+      };
+
+      const result = await new QueryBuilder(mockClient)
+        .objectType('1')
+        .where('statuscode').equals('999')
+        .count();
+
+      expect(result).toBe(0);
+    });
+
+    it('should use only ID field for efficiency', async () => {
+      let calledWith: any = null;
+      const mockClient = {
+        query: async (options: any) => {
+          calledWith = options;
+          return { records: [], total: 0, success: true };
+        },
+      };
+
+      await new QueryBuilder(mockClient)
+        .objectType('1')
+        .select('name', 'email', 'phone') // These should be ignored for count
+        .count();
+
+      // Should only request the ID field for efficiency
+      expect(calledWith.fields).toEqual(['accountid']);
+    });
+
+    it('should not show real values for efficiency', async () => {
+      let calledWith: any = null;
+      const mockClient = {
+        query: async (options: any) => {
+          calledWith = options;
+          return { records: [], total: 0, success: true };
+        },
+      };
+
+      await new QueryBuilder(mockClient)
+        .objectType('1')
+        .showRealValue(true) // Should be overridden for count
+        .count();
+
+      expect(calledWith.showRealValue).toBe(false);
+    });
+  });
+
+  describe('first()', () => {
+    it('should throw error when no client is provided', async () => {
+      const builder = new QueryBuilder()
+        .objectType('1')
+        .where('statuscode').equals('1');
+
+      await expect(builder.first()).rejects.toThrow(
+        'QueryBuilder requires a client to execute queries'
+      );
+    });
+
+    it('should return first record when records exist', async () => {
+      const mockRecords = [
+        { accountid: '1', name: 'First' },
+        { accountid: '2', name: 'Second' },
+      ];
+      const mockClient = {
+        query: async () => ({ records: mockRecords, total: 2, success: true }),
+      };
+
+      const result = await new QueryBuilder(mockClient)
+        .objectType('1')
+        .first();
+
+      expect(result).toEqual({ accountid: '1', name: 'First' });
+    });
+
+    it('should return null when no records exist', async () => {
+      const mockClient = {
+        query: async () => ({ records: [], total: 0, success: true }),
+      };
+
+      const result = await new QueryBuilder(mockClient)
+        .objectType('1')
+        .first();
+
+      expect(result).toBeNull();
+    });
+
+    it('should use limit 1 for efficiency', async () => {
+      let calledWith: any = null;
+      const mockClient = {
+        query: async (options: any) => {
+          calledWith = options;
+          return { records: [], total: 0, success: true };
+        },
+      };
+
+      await new QueryBuilder(mockClient)
+        .objectType('1')
+        .limit(100) // Original limit should be temporarily overridden
+        .first();
+
+      expect(calledWith.limit).toBe(1);
+    });
+
+    it('should restore original limit after execution', async () => {
+      const mockClient = {
+        query: async () => ({ records: [], total: 0, success: true }),
+      };
+
+      const builder = new QueryBuilder(mockClient)
+        .objectType('1')
+        .limit(100);
+
+      await builder.first();
+
+      // Access internal state to verify limit was restored
+      expect((builder as any).limitValue).toBe(100);
+    });
+  });
+
+  describe('whereDate()', () => {
+    describe('today()', () => {
+      it('should create query for today', () => {
+        const today = getToday();
+        const tomorrow = addDays(today, 1);
+        const query = new QueryBuilder()
+          .whereDate('createdon').today()
+          .build();
+        expect(query).toBe(`(createdon >= ${today}) and (createdon < ${tomorrow})`);
+      });
+    });
+
+    describe('thisWeek()', () => {
+      it('should create query for this week', () => {
+        const startOfWeek = getStartOfWeek();
+        const tomorrow = addDays(getToday(), 1);
+        const query = new QueryBuilder()
+          .whereDate('createdon').thisWeek()
+          .build();
+        expect(query).toBe(`(createdon >= ${startOfWeek}) and (createdon < ${tomorrow})`);
+      });
+    });
+
+    describe('thisMonth()', () => {
+      it('should create query for this month', () => {
+        const startOfMonth = getStartOfMonth();
+        const tomorrow = addDays(getToday(), 1);
+        const query = new QueryBuilder()
+          .whereDate('createdon').thisMonth()
+          .build();
+        expect(query).toBe(`(createdon >= ${startOfMonth}) and (createdon < ${tomorrow})`);
+      });
+    });
+
+    describe('between()', () => {
+      it('should create query for date range', () => {
+        const query = new QueryBuilder()
+          .whereDate('createdon').between('2024-01-01', '2024-12-31')
+          .build();
+        // End date is converted to < next day for inclusive range
+        expect(query).toBe('(createdon >= 2024-01-01) and (createdon < 2025-01-01)');
+      });
+
+      it('should handle datetime end values without conversion', () => {
+        const query = new QueryBuilder()
+          .whereDate('createdon').between('2024-01-01', '2024-12-31T23:59:59')
+          .build();
+        expect(query).toBe('(createdon >= 2024-01-01) and (createdon < 2024-12-31T23:59:59)');
+      });
+    });
+
+    describe('daysAgo()', () => {
+      it('should create query for last N days', () => {
+        const today = getToday();
+        const sevenDaysAgo = addDays(today, -7);
+        const tomorrow = addDays(today, 1);
+        const query = new QueryBuilder()
+          .whereDate('createdon').daysAgo(7)
+          .build();
+        expect(query).toBe(`(createdon >= ${sevenDaysAgo}) and (createdon < ${tomorrow})`);
+      });
+    });
+
+    describe('before()', () => {
+      it('should create query for before date', () => {
+        const query = new QueryBuilder()
+          .whereDate('createdon').before('2024-06-01')
+          .build();
+        expect(query).toBe('(createdon < 2024-06-01)');
+      });
+    });
+
+    describe('after()', () => {
+      it('should create query for after date (next day for pure dates)', () => {
+        const query = new QueryBuilder()
+          .whereDate('createdon').after('2024-06-01')
+          .build();
+        // After 2024-06-01 means >= 2024-06-02
+        expect(query).toBe('(createdon >= 2024-06-02)');
+      });
+    });
+
+    describe('onOrBefore()', () => {
+      it('should create query for on or before date', () => {
+        const query = new QueryBuilder()
+          .whereDate('createdon').onOrBefore('2024-06-01')
+          .build();
+        // On or before 2024-06-01 means < 2024-06-02
+        expect(query).toBe('(createdon < 2024-06-02)');
+      });
+    });
+
+    describe('onOrAfter()', () => {
+      it('should create query for on or after date', () => {
+        const query = new QueryBuilder()
+          .whereDate('createdon').onOrAfter('2024-06-01')
+          .build();
+        expect(query).toBe('(createdon >= 2024-06-01)');
+      });
+    });
+
+    it('should work with other conditions', () => {
+      const today = getToday();
+      const tomorrow = addDays(today, 1);
+      const query = new QueryBuilder()
+        .where('statuscode').equals('1')
+        .and()
+        .whereDate('createdon').today()
+        .build();
+      expect(query).toBe(`(statuscode = 1) and (createdon >= ${today}) and (createdon < ${tomorrow})`);
+    });
+  });
+
+  describe('executeWithDebug()', () => {
+    it('should throw error when no client is provided', async () => {
+      const builder = new QueryBuilder()
+        .objectType('1')
+        .where('statuscode').equals('1');
+
+      await expect(builder.executeWithDebug()).rejects.toThrow(
+        'QueryBuilder requires a client to execute queries'
+      );
+    });
+
+    it('should throw error when objectType is not set', async () => {
+      const mockClient = {
+        query: async () => ({ records: [], total: 0, success: true }),
+      };
+
+      const builder = new QueryBuilder(mockClient)
+        .where('statuscode').equals('1');
+
+      await expect(builder.executeWithDebug()).rejects.toThrow(
+        'Object type is required'
+      );
+    });
+
+    it('should return results with metadata', async () => {
+      const mockRecords = [{ id: '1' }, { id: '2' }];
+      const mockClient = {
+        query: async () => ({ records: mockRecords, total: 2, success: true }),
+      };
+
+      const result = await new QueryBuilder(mockClient)
+        .objectType('1')
+        .select('accountid', 'accountname')
+        .where('statuscode').equals('1')
+        .executeWithDebug();
+
+      expect(result.records).toEqual(mockRecords);
+      expect(result.total).toBe(2);
+      expect(result.success).toBe(true);
+      expect(result.metadata).toBeDefined();
+      expect(result.metadata.objectType).toBe('1');
+      expect(result.metadata.fields).toEqual(['accountid', 'accountname']);
+      expect(result.metadata.queryString).toBe('(statuscode = 1)');
+      expect(result.metadata.pageNumber).toBe(1);
+      expect(result.metadata.pageSize).toBe(500);
+      expect(result.metadata.executionTimeMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should include sort info in metadata when set', async () => {
+      const mockClient = {
+        query: async () => ({ records: [], total: 0, success: true }),
+      };
+
+      const result = await new QueryBuilder(mockClient)
+        .objectType('1')
+        .sortBy('createdon', 'asc')
+        .executeWithDebug();
+
+      expect(result.metadata.sortBy).toBe('createdon');
+      expect(result.metadata.sortType).toBe('asc');
+    });
+
+    it('should include limit in metadata when set', async () => {
+      const mockClient = {
+        query: async () => ({ records: [], total: 0, success: true }),
+      };
+
+      const result = await new QueryBuilder(mockClient)
+        .objectType('1')
+        .limit(50)
+        .executeWithDebug();
+
+      expect(result.metadata.limit).toBe(50);
+      expect(result.metadata.pageSize).toBe(50);
+    });
+
+    it('should measure execution time', async () => {
+      const mockClient = {
+        query: async () => {
+          // Simulate some delay
+          await new Promise(resolve => setTimeout(resolve, 10));
+          return { records: [], total: 0, success: true };
+        },
+      };
+
+      const result = await new QueryBuilder(mockClient)
+        .objectType('1')
+        .executeWithDebug();
+
+      expect(result.metadata.executionTimeMs).toBeGreaterThanOrEqual(10);
+    });
+
+    it('should use default fields as ["*"] when none selected', async () => {
+      const mockClient = {
+        query: async () => ({ records: [], total: 0, success: true }),
+      };
+
+      const result = await new QueryBuilder(mockClient)
+        .objectType('1')
+        .executeWithDebug();
+
+      expect(result.metadata.fields).toEqual(['*']);
     });
   });
 });

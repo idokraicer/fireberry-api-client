@@ -8,10 +8,17 @@ A standalone, framework-agnostic TypeScript/JavaScript client for the Fireberry 
 - Zero runtime dependencies (uses native `fetch`)
 - Supports both ESM and CommonJS
 - Automatic retry on rate limits (429)
-- Optional metadata caching
+- Optional metadata and query result caching
+- Smart cache invalidation on mutations (auto-clears query cache when records are modified)
+- Request deduplication (concurrent identical queries share a single API call)
+- Parallel query execution with `queryAll()`
+- Cursor-based pagination with async iterators
 - Lookup field relationship detection
-- Fluent QueryBuilder API
+- Fluent QueryBuilder API with date helpers and debugging
+- Query explain/dry-run for analyzing queries before execution
 - Batch operations with auto-chunking
+- Schema generator for TypeScript types from live API metadata
+- ERD generator for Mermaid diagrams
 - AbortController support for cancellation
 
 ## Installation
@@ -67,7 +74,10 @@ const client = new FireberryClient({
   maxRetries: 120,               // Optional, max retry attempts
   retryDelay: 1000,              // Optional, delay between retries in ms
   cacheMetadata: false,          // Optional, enable metadata caching
-  cacheTTL: 300000,              // Optional, cache TTL in ms (5 min default)
+  cacheTTL: 300000,              // Optional, metadata cache TTL in ms (5 min default)
+  cacheQueryResults: false,      // Optional, enable query result caching
+  queryResultCacheTTL: 60000,    // Optional, query cache TTL in ms (1 min default)
+  invalidateCacheOnMutation: true, // Optional, auto-clear query cache on create/update/delete (default: true)
 });
 ```
 
@@ -160,6 +170,192 @@ const contact = await client.queryBuilder()
 // This ensures records from Jan 15 are included (API quirk workaround)
 ```
 
+### QueryBuilder: Additional Methods
+
+```typescript
+// whereIn - query with multiple values (OR'd together)
+const accounts = await client.queryBuilder()
+  .objectType(1)
+  .whereIn('statuscode', [1, 2, 3])  // (statuscode = 1) or (statuscode = 2) or (statuscode = 3)
+  .execute();
+
+// first() - return single record or null
+const account = await client.queryBuilder()
+  .objectType(1)
+  .where('accountname').equals('Acme Corp')
+  .first();  // Returns Record<string, unknown> | null
+
+// count() - get total count without fetching records
+const total = await client.queryBuilder()
+  .objectType(1)
+  .where('statuscode').equals('1')
+  .count();  // Returns number
+```
+
+### QueryBuilder: Date Helpers
+
+```typescript
+// Query records from today
+const todaysRecords = await client.queryBuilder()
+  .objectType(1)
+  .whereDate('createdon').today()
+  .execute();
+
+// Query records from this week
+const thisWeeksRecords = await client.queryBuilder()
+  .objectType(1)
+  .whereDate('createdon').thisWeek()
+  .execute();
+
+// Query records from this month
+const thisMonthsRecords = await client.queryBuilder()
+  .objectType(1)
+  .whereDate('createdon').thisMonth()
+  .execute();
+
+// Query records from N days ago
+const last7Days = await client.queryBuilder()
+  .objectType(1)
+  .whereDate('createdon').daysAgo(7)
+  .execute();
+
+// Query records between two dates
+const dateRange = await client.queryBuilder()
+  .objectType(1)
+  .whereDate('createdon').between('2024-01-01', '2024-01-31')
+  .execute();
+
+// Query records before/after a date
+const beforeDate = await client.queryBuilder()
+  .objectType(1)
+  .whereDate('createdon').before('2024-06-01')
+  .execute();
+
+const afterDate = await client.queryBuilder()
+  .objectType(1)
+  .whereDate('createdon').after('2024-01-01')
+  .execute();
+
+// On or before/after (correctly handles API date quirks)
+const onOrBefore = await client.queryBuilder()
+  .objectType(1)
+  .whereDate('createdon').onOrBefore('2024-06-30')
+  .execute();
+```
+
+### QueryBuilder: Debugging
+
+```typescript
+// Get query result with metadata for debugging
+const result = await client.queryBuilder()
+  .objectType(1)
+  .select('accountid', 'accountname')
+  .where('statuscode').equals('1')
+  .limit(50)
+  .executeWithDebug();
+
+console.log(result.metadata);
+// {
+//   objectType: '1',
+//   fields: ['accountid', 'accountname'],
+//   queryString: '(statuscode = 1)',
+//   pageNumber: 1,
+//   pageSize: 500,
+//   autoPage: true,
+//   sortBy: 'modifiedon',
+//   sortType: 'desc',
+//   limit: 50,
+//   executionTimeMs: 234
+// }
+```
+
+### QueryBuilder: Explain (Dry Run)
+
+Analyze a query without executing it to understand its behavior and get optimization suggestions:
+
+```typescript
+const explanation = client.queryBuilder()
+  .objectType(1)
+  .select('*')
+  .where('statuscode').equals('1')
+  .limit(100)
+  .explain();
+
+console.log(explanation);
+// {
+//   objectType: '1',
+//   query: '(statuscode = 1)',
+//   fields: ['*'],
+//   usesWildcard: true,
+//   willAutoPage: true,
+//   limit: 100,
+//   pageSize: 500,
+//   sorting: { field: 'modifiedon', direction: 'desc' },
+//   estimatedApiCalls: 1,
+//   conditionCount: 1,
+//   showRealValue: false,
+//   warnings: ['Using wildcard (*) fields - consider specifying exact fields for better performance'],
+//   suggestions: ['Specify exact fields instead of * to reduce payload size']
+// }
+
+// Use explain to validate queries before execution
+if (explanation.warnings.length > 0) {
+  console.warn('Query warnings:', explanation.warnings);
+}
+```
+
+### Parallel Query Execution
+
+Execute multiple queries in parallel with concurrency control:
+
+```typescript
+const results = await client.queryAll([
+  { objectType: '1', fields: ['accountid', 'accountname'] },
+  { objectType: '2', fields: ['contactid', 'fullname'] },
+  { objectType: '4', fields: ['opportunityid', 'name'] },
+], {
+  concurrency: 5,  // Optional, max parallel requests (default: 5)
+});
+
+// Results are returned in the same order as input queries
+console.log(results[0].records);  // Accounts
+console.log(results[1].records);  // Contacts
+console.log(results[2].records);  // Opportunities
+```
+
+### Streaming / Cursor-Based Pagination
+
+Process large datasets without loading everything into memory:
+
+```typescript
+// Process records in batches using async iterator
+for await (const batch of client.queryStream({
+  objectType: '1',
+  fields: ['accountid', 'accountname'],
+  pageSize: 100,
+})) {
+  console.log(`Processing ${batch.records.length} records (page ${batch.page})...`);
+  for (const record of batch.records) {
+    // Process each record
+  }
+}
+
+// Collect all records from stream
+const allRecords: Record<string, unknown>[] = [];
+for await (const batch of client.queryStream({ objectType: '1', fields: '*' })) {
+  allRecords.push(...batch.records);
+}
+
+// With limit
+for await (const batch of client.queryStream({
+  objectType: '1',
+  fields: '*',
+  limit: 1000,  // Stop after 1000 records
+})) {
+  // Process batch
+}
+```
+
 ### CRUD Operations
 
 ```typescript
@@ -227,23 +423,38 @@ const fieldsOnly = await client.metadata.getFields('1', { includeLookupRelations
 const values = await client.metadata.getFieldValues('1', 'statuscode');
 ```
 
-### Metadata Caching
+### Caching
 
 ```typescript
 const client = new FireberryClient({
   apiKey: 'your-api-key',
   cacheMetadata: true,
-  cacheTTL: 300000, // 5 minutes
+  cacheTTL: 300000,           // Metadata cache: 5 minutes
+  cacheQueryResults: true,
+  queryResultCacheTTL: 60000, // Query cache: 1 minute
 });
 
 // Metadata calls are cached
 await client.metadata.getFields('1'); // Hits API
 await client.metadata.getFields('1'); // Uses cache
 
+// Query results are cached (when cacheQueryResults is enabled)
+await client.query({ objectType: '1', fields: '*' }); // Hits API
+await client.query({ objectType: '1', fields: '*' }); // Uses cache
+
+// Request deduplication (always active)
+// Concurrent identical queries share a single API call
+const [result1, result2] = await Promise.all([
+  client.query({ objectType: '1', fields: '*' }),  // Makes API call
+  client.query({ objectType: '1', fields: '*' }),  // Shares same promise
+]);
+
 // Manual cache control
-client.cache.clear();                    // Clear all cache
-client.cache.clearFields('1');           // Clear fields for object 1
+client.cache.clear();                           // Clear all cache
+client.cache.clearFields('1');                  // Clear fields for object 1
 client.cache.clearFieldValues('1', 'statuscode'); // Clear specific field values
+client.cache.clearQueryResults();               // Clear all query result cache
+client.cache.clearQueryResultsForObject('1');   // Clear query cache for object 1
 ```
 
 ### Custom API Calls
@@ -383,6 +594,100 @@ getLabelFieldForField('statuscode', '1'); // 'status'
 isDropdownField('5');  // true
 isLookupField('6');    // true
 ```
+
+## Schema Generator
+
+Generate TypeScript interfaces from your Fireberry metadata:
+
+```typescript
+import { generateSchema, schemaBuilder } from 'fireberry-api-client/utils';
+
+// Simple generation
+const result = await generateSchema(client);
+console.log(result.typescript);  // TypeScript code
+console.log(result.metadata);    // { totalObjects: 15, totalFields: 234 }
+
+// Write to file
+import fs from 'fs';
+fs.writeFileSync('./fireberry-types.ts', result.typescript);
+
+// Fluent builder with options
+const result = await schemaBuilder(client)
+  .include([1, 2, 4])       // Only Account, Contact, Opportunity
+  .exclude([1000])          // Exclude custom object 1000
+  .withComments()           // Include JSDoc comments
+  .withFieldTypes()         // Include field type info
+  .withLookupInfo()         // Include related object type for lookups
+  .withPrefix('FB')         // Prefix interfaces: FBAccount, FBContact
+  .asReadonly()             // Generate readonly interfaces
+  .generate();
+
+// Generated output example:
+// /**
+//  * Account (Object Type: 1)
+//  * System Name: Account
+//  */
+// export interface FBAccount {
+//   /** Account Name @type text */
+//   accountname?: string;
+//   /** Status @type dropdown */
+//   statuscode?: string | number;
+//   /** Primary Contact @type lookup @relatedObjectType 2 */
+//   primarycontactid?: string;
+// }
+```
+
+## ERD Generator
+
+Generate Mermaid ERD diagrams from your Fireberry schema:
+
+```typescript
+import { erdBuilder, generateFireberryERD } from 'fireberry-api-client/utils';
+
+// Fluent builder API
+const result = await erdBuilder(client)
+  .include([1, 2, 4, 9])    // Account, Contact, Opportunity, custom object
+  .exclude([1000])          // Exclude specific objects
+  .settings({
+    includeFields: true,           // Show fields in entities
+    showFieldTypes: true,          // Show field types (text, lookup, etc.)
+    onlyRelationshipFields: false, // Show only lookup fields
+    maxFieldsPerEntity: 10,        // Limit fields per entity (0 = unlimited)
+    includeFieldLabels: false,     // Include field labels as comments
+    title: 'My CRM Schema',        // Diagram title
+    useDisplayNames: false,        // Use system names (recommended)
+    includeFrontmatter: false,     // Exclude YAML frontmatter
+  })
+  .generate();
+
+console.log(result.mermaid);       // Mermaid ERD code
+console.log(result.objects);       // Processed objects
+console.log(result.relationships); // Found relationships
+console.log(result.warnings);      // Any warnings
+
+// Direct function alternative
+const result = await generateFireberryERD(client, {
+  include: [1, 2, 4],
+  settings: { includeFields: true, maxFieldsPerEntity: 5 },
+});
+
+// Example Mermaid output:
+// erDiagram
+//     Account {
+//         text accountname
+//         lookup primarycontactid FK
+//         dropdown statuscode
+//     }
+//     Contact {
+//         text fullname
+//         lookup accountid FK
+//     }
+//
+//     Account }o--|| Contact : "primarycontactid"
+//     Contact }o--|| Account : "accountid"
+```
+
+Render the Mermaid code using any Mermaid-compatible viewer (VS Code extension, GitHub, Notion, etc.).
 
 ## Object Type Reference
 

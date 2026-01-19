@@ -340,3 +340,57 @@ describe('Cache', () => {
     });
   });
 });
+
+describe('Query Result Caching Configuration', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('should have query result caching disabled by default', () => {
+    const client = new FireberryClient({ apiKey: 'test-key' });
+    const config = client.getConfig();
+    expect(config.cacheQueryResults).toBe(false);
+  });
+
+  it('should enable query result caching when configured', () => {
+    const client = new FireberryClient({
+      apiKey: 'test-key',
+      cacheQueryResults: true,
+    });
+    const config = client.getConfig();
+    expect(config.cacheQueryResults).toBe(true);
+  });
+
+  it('should use default query cache TTL of 1 minute', () => {
+    const client = new FireberryClient({
+      apiKey: 'test-key',
+      cacheQueryResults: true,
+    });
+    const config = client.getConfig();
+    expect(config.queryResultCacheTTL).toBe(60000);
+  });
+
+  it('should use custom query cache TTL when provided', () => {
+    const client = new FireberryClient({
+      apiKey: 'test-key',
+      cacheQueryResults: true,
+      queryResultCacheTTL: 30000,
+    });
+    const config = client.getConfig();
+    expect(config.queryResultCacheTTL).toBe(30000);
+  });
+
+  it('should have clearQueryResults method', () => {
+    const client = new FireberryClient({ apiKey: 'test-key' });
+    expect(typeof client.cache.clearQueryResults).toBe('function');
+  });
+
+  it('should have clearQueryResultsForObject method', () => {
+    const client = new FireberryClient({ apiKey: 'test-key' });
+    expect(typeof client.cache.clearQueryResultsForObject).toBe('function');
+  });
+});
