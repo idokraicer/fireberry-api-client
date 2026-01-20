@@ -70,8 +70,18 @@ export class FilesAPI {
     const { buffer, filename, mimeType } = options;
     const config = this.client.getConfig();
 
+    // Ensure API key is available (file uploads not supported in SDK mode)
+    if (!config.apiKey) {
+      throw new FireberryError(
+        'File upload requires an API key. SDK mode does not support file uploads.',
+        {
+          code: FireberryErrorCode.INVALID_REQUEST,
+        }
+      );
+    }
+
     // Build the URL
-    const url = `${config.baseUrl}/api/v2/record/${objectTypeStr}/${recordId}/files`;
+    const url = `${config.baseUrl || 'https://api.fireberry.com'}/api/v2/record/${objectTypeStr}/${recordId}/files`;
 
     // Create form data
     // Note: In Node.js, we need to construct multipart/form-data manually

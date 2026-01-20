@@ -4,14 +4,14 @@ import type {
   CacheControl,
 } from './types/client';
 import type { QueryOptions, QueryResult } from './types/query';
+import type { Transport } from './types/transport';
 import {
   FireberryError,
   FireberryErrorCode,
-  createErrorFromResponse,
-  createNetworkError,
 } from './errors';
-import { wait } from './utils/helpers';
 import { QueryBuilder } from './utils/queryBuilder';
+import { createTransport, createMetadataTransport, isMetadataAvailable } from './utils/transport';
+import { HTTPTransport } from './transport/http';
 
 // Import API modules
 import { MetadataAPI } from './api/metadata';
@@ -83,10 +83,24 @@ function generateQueryCacheKey(options: QueryOptions): string {
  * ```
  */
 export class FireberryClient {
-  private readonly config: Required<FireberryClientConfig>;
+  private readonly config: FireberryClientConfig;
+  private readonly normalizedConfig: {
+    baseUrl: string;
+    timeout: number;
+    retryOn429: boolean;
+    maxRetries: number;
+    retryDelay: number;
+    cacheMetadata: boolean;
+    cacheTTL: number;
+    cacheQueryResults: boolean;
+    queryResultCacheTTL: number;
+    invalidateCacheOnMutation: boolean;
+  };
   private readonly cacheStore: CacheStore;
   private readonly inFlightQueries: Map<string, Promise<QueryResult>> = new Map();
   private readonly queryCache: Map<string, QueryCache> = new Map();
+  private readonly transport: Transport;
+  private readonly metadataTransport: HTTPTransport | null;
 
   /** Metadata API operations */
   readonly metadata: MetadataAPI;
@@ -103,8 +117,11 @@ export class FireberryClient {
    * Creates a new FireberryClient instance
    */
   constructor(config: FireberryClientConfig) {
-    this.config = {
-      apiKey: config.apiKey,
+    // Store original config
+    this.config = config;
+
+    // Create normalized config for settings
+    this.normalizedConfig = {
       baseUrl: config.baseUrl || 'https://api.fireberry.com',
       timeout: config.timeout || 30000,
       retryOn429: config.retryOn429 ?? true,
@@ -123,6 +140,10 @@ export class FireberryClient {
       fieldValues: new Map(),
     };
 
+    // Create transport layer
+    this.transport = createTransport(config);
+    this.metadataTransport = createMetadataTransport(config);
+
     // Initialize API modules
     this.metadata = new MetadataAPI(this);
     this.records = new RecordsAPI(this);
@@ -132,10 +153,48 @@ export class FireberryClient {
   }
 
   /**
-   * Gets the client configuration
+   * Gets the client configuration with all defaults applied
    */
-  getConfig(): Readonly<Required<FireberryClientConfig>> {
-    return this.config;
+  getConfig(): Readonly<FireberryClientConfig & {
+    baseUrl: string;
+    timeout: number;
+    retryOn429: boolean;
+    maxRetries: number;
+    retryDelay: number;
+    cacheMetadata: boolean;
+    cacheTTL: number;
+    cacheQueryResults: boolean;
+    queryResultCacheTTL: number;
+    invalidateCacheOnMutation: boolean;
+  }> {
+    return {
+      ...this.config,
+      ...this.normalizedConfig,
+    };
+  }
+
+  /**
+   * Gets the transport instance (for internal use by API modules)
+   * @internal
+   */
+  getTransport(): Transport {
+    return this.transport;
+  }
+
+  /**
+   * Gets the metadata transport instance (for internal use by MetadataAPI)
+   * Returns null if metadata is not available (SDK-only mode without API key)
+   * @internal
+   */
+  getMetadataTransport(): HTTPTransport | null {
+    return this.metadataTransport;
+  }
+
+  /**
+   * Checks if metadata operations are available
+   */
+  isMetadataAvailable(): boolean {
+    return isMetadataAvailable(this.config);
   }
 
   /**
@@ -193,7 +252,7 @@ export class FireberryClient {
    * @internal
    */
   invalidateCacheForMutation(objectType: string): void {
-    if (this.config.invalidateCacheOnMutation) {
+    if (this.normalizedConfig.invalidateCacheOnMutation) {
       this.cache.clearQueryResultsForObject(objectType);
     }
   }
@@ -205,31 +264,31 @@ export class FireberryClient {
     const now = Date.now();
 
     // Clean query cache
-    if (this.config.cacheQueryResults) {
+    if (this.normalizedConfig.cacheQueryResults) {
       for (const [key, entry] of this.queryCache) {
-        if (now - entry.timestamp >= this.config.queryResultCacheTTL) {
+        if (now - entry.timestamp >= this.normalizedConfig.queryResultCacheTTL) {
           this.queryCache.delete(key);
         }
       }
     }
 
     // Clean metadata caches
-    if (this.config.cacheMetadata) {
+    if (this.normalizedConfig.cacheMetadata) {
       // Clean objects cache
-      if (this.cacheStore.objects && now - this.cacheStore.objects.timestamp >= this.config.cacheTTL) {
+      if (this.cacheStore.objects && now - this.cacheStore.objects.timestamp >= this.normalizedConfig.cacheTTL) {
         this.cacheStore.objects = undefined;
       }
 
       // Clean fields cache
       for (const [key, entry] of this.cacheStore.fields) {
-        if (now - entry.timestamp >= this.config.cacheTTL) {
+        if (now - entry.timestamp >= this.normalizedConfig.cacheTTL) {
           this.cacheStore.fields.delete(key);
         }
       }
 
       // Clean fieldValues cache
       for (const [key, entry] of this.cacheStore.fieldValues) {
-        if (now - entry.timestamp >= this.config.cacheTTL) {
+        if (now - entry.timestamp >= this.normalizedConfig.cacheTTL) {
           this.cacheStore.fieldValues.delete(key);
         }
       }
@@ -247,7 +306,7 @@ export class FireberryClient {
     objectType?: string,
     fieldName?: string,
   ): T | undefined {
-    if (!this.config.cacheMetadata) {
+    if (!this.normalizedConfig.cacheMetadata) {
       return undefined;
     }
 
@@ -255,18 +314,18 @@ export class FireberryClient {
 
     if (type === 'objects') {
       const cached = this.cacheStore.objects;
-      if (cached && now - cached.timestamp < this.config.cacheTTL) {
+      if (cached && now - cached.timestamp < this.normalizedConfig.cacheTTL) {
         return cached.data as T;
       }
     } else if (type === 'fields' && objectType) {
       const cached = this.cacheStore.fields.get(objectType);
-      if (cached && now - cached.timestamp < this.config.cacheTTL) {
+      if (cached && now - cached.timestamp < this.normalizedConfig.cacheTTL) {
         return cached.data as T;
       }
     } else if (type === 'fieldValues' && objectType && fieldName) {
       const key = `${objectType}:${fieldName}`;
       const cached = this.cacheStore.fieldValues.get(key);
-      if (cached && now - cached.timestamp < this.config.cacheTTL) {
+      if (cached && now - cached.timestamp < this.normalizedConfig.cacheTTL) {
         return cached.data as T;
       }
     }
@@ -286,7 +345,7 @@ export class FireberryClient {
     fieldNameOrData?: string | unknown,
     data?: unknown,
   ): void {
-    if (!this.config.cacheMetadata) {
+    if (!this.normalizedConfig.cacheMetadata) {
       return;
     }
 
@@ -486,9 +545,9 @@ export class FireberryClient {
     const cacheKey = generateQueryCacheKey(options);
 
     // Check query result cache first
-    if (this.config.cacheQueryResults) {
+    if (this.normalizedConfig.cacheQueryResults) {
       const cached = this.queryCache.get(cacheKey);
-      if (cached && Date.now() - cached.timestamp < this.config.queryResultCacheTTL) {
+      if (cached && Date.now() - cached.timestamp < this.normalizedConfig.queryResultCacheTTL) {
         return cached.data;
       }
     }
@@ -509,7 +568,7 @@ export class FireberryClient {
       const result = await queryPromise;
 
       // Store in cache if caching is enabled
-      if (this.config.cacheQueryResults) {
+      if (this.normalizedConfig.cacheQueryResults) {
         // Cleanup expired entries on write
         this.cleanupExpiredCacheEntries();
         this.queryCache.set(cacheKey, {
@@ -532,14 +591,6 @@ export class FireberryClient {
     const {
       objectType,
       fields,
-      query,
-      sortBy = 'modifiedon',
-      sortType = 'desc',
-      limit,
-      page = 1,
-      pageSize = 500,
-      showRealValue = true,
-      autoPage = true,
       signal,
     } = options;
 
@@ -558,113 +609,11 @@ export class FireberryClient {
       fieldsStr = await this.expandStarFields(objectType, signal);
     }
 
-    // If autoPage is true, fetch all pages
-    if (autoPage) {
-      return this.queryAllPages({
-        objectType,
-        fields: fieldsStr,
-        query,
-        sortBy,
-        sortType,
-        showRealValue,
-        limit,
-        signal,
-      });
-    }
-
-    // Single page query
-    const body = {
-      objecttype: objectType,
+    // Use transport to execute the query
+    return this.transport.query({
+      ...options,
       fields: fieldsStr,
-      query: query || '',
-      sort_by: sortBy,
-      sort_type: sortType,
-      page_size: Math.min(pageSize, limit || 500),
-      page_number: page,
-      show_real_value: showRealValue ? 1 : 0,
-    };
-
-    const response = await this.request<{ data?: { Data?: Record<string, unknown>[] } }>({
-      method: 'POST',
-      endpoint: '/api/query',
-      body,
-      signal,
     });
-
-    const records = response.data?.Data || [];
-
-    return {
-      records,
-      total: records.length,
-      success: true,
-    };
-  }
-
-  /**
-   * Fetches all pages of a query
-   */
-  private async queryAllPages(options: {
-    objectType: string;
-    fields: string;
-    query?: string;
-    sortBy: string;
-    sortType: string;
-    showRealValue: boolean;
-    limit?: number;
-    signal?: AbortSignal;
-  }): Promise<QueryResult> {
-    const { objectType, fields, query, sortBy, sortType, showRealValue, limit, signal } = options;
-    const maxPageSize = 500;
-    const allRecords: Record<string, unknown>[] = [];
-    let currentPage = 1;
-    let hasMore = true;
-
-    while (hasMore) {
-      // Check for abort
-      if (signal?.aborted) {
-        break;
-      }
-
-      const body = {
-        objecttype: objectType,
-        fields,
-        query: query || '',
-        sort_by: sortBy,
-        sort_type: sortType,
-        page_size: maxPageSize,
-        page_number: currentPage,
-        show_real_value: showRealValue ? 1 : 0,
-      };
-
-      const response = await this.request<{ data?: { Data?: Record<string, unknown>[] } }>({
-        method: 'POST',
-        endpoint: '/api/query',
-        body,
-        signal,
-      });
-
-      const pageData = response.data?.Data || [];
-      allRecords.push(...pageData);
-
-      // Check if we've reached the limit
-      if (limit && allRecords.length >= limit) {
-        allRecords.splice(limit);
-        break;
-      }
-
-      // Check if there are more pages
-      if (pageData.length < maxPageSize) {
-        hasMore = false;
-      } else {
-        currentPage++;
-      }
-    }
-
-    return {
-      records: allRecords,
-      total: allRecords.length,
-      success: true,
-    };
   }
 
   /**
@@ -693,143 +642,25 @@ export class FireberryClient {
 
   /**
    * Makes a raw API request to the Fireberry API
+   * @deprecated Use getTransport() or getMetadataTransport() for new code
+   * @internal This method is kept for backwards compatibility with API modules
    */
   async request<T = unknown>(options: RequestOptions): Promise<T> {
-    const {
-      method,
-      endpoint,
-      query: queryParams,
-      body,
-      headers: customHeaders,
-      signal,
-    } = options;
+    // Delegate to metadata transport if available (for metadata operations)
+    // Otherwise use the main transport
+    const transport = this.metadataTransport || this.transport;
 
-    // Build URL
-    let url = `${this.config.baseUrl}${endpoint}`;
-
-    // Add query parameters if any
-    if (queryParams && Object.keys(queryParams).length > 0) {
-      const params = new URLSearchParams();
-      for (const [key, value] of Object.entries(queryParams)) {
-        if (value !== undefined && value !== null) {
-          params.set(key, String(value));
-        }
-      }
-      url += `?${params.toString()}`;
+    // For HTTP transport, delegate directly
+    if (transport instanceof HTTPTransport) {
+      return transport.request<T>(options);
     }
 
-    // Build headers
-    const headers: Record<string, string> = {
-      Accept: 'application/json',
-      tokenid: this.config.apiKey,
-      ...customHeaders,
-    };
-
-    if (body) {
-      headers['Content-Type'] = 'application/json';
-    }
-
-    // Build fetch options
-    const fetchOptions: RequestInit = {
-      method,
-      headers,
-      signal,
-    };
-
-    if (body) {
-      fetchOptions.body = JSON.stringify(body);
-    }
-
-    // Execute with retry logic
-    return this.executeWithRetry<T>(url, fetchOptions);
-  }
-
-  /**
-   * Executes a fetch request with retry logic for 429 errors
-   */
-  private async executeWithRetry<T>(
-    url: string,
-    options: RequestInit,
-    retryCount = 0,
-  ): Promise<T> {
-    try {
-      // Create timeout controller
-      const timeoutController = new AbortController();
-      const timeoutId = setTimeout(() => {
-        timeoutController.abort();
-      }, this.config.timeout);
-
-      // Combine signals if external signal provided
-      const combinedSignal = options.signal
-        ? this.combineSignals([options.signal, timeoutController.signal])
-        : timeoutController.signal;
-
-      const response = await fetch(url, {
-        ...options,
-        signal: combinedSignal,
-      });
-
-      clearTimeout(timeoutId);
-
-      // Handle rate limiting
-      if (response.status === 429 && this.config.retryOn429) {
-        if (retryCount < this.config.maxRetries) {
-          // Wait before retrying
-          await wait(this.config.retryDelay);
-          return this.executeWithRetry<T>(url, options, retryCount + 1);
-        }
-        throw new FireberryError('Rate limit exceeded after max retries', {
-          code: FireberryErrorCode.RATE_LIMITED,
-          statusCode: 429,
-          context: { retryCount },
-        });
+    // For SDK transport, throw error since raw requests aren't supported
+    throw new FireberryError(
+      'Raw request() is not supported in SDK mode. Use specific methods like query(), createRecord(), etc.',
+      {
+        code: FireberryErrorCode.INVALID_REQUEST,
       }
-
-      // Parse response
-      let body: unknown;
-      const contentType = response.headers.get('content-type');
-      if (contentType?.includes('application/json')) {
-        body = await response.json();
-      } else {
-        body = await response.text();
-      }
-
-      // Handle errors
-      if (!response.ok) {
-        throw createErrorFromResponse(response, body);
-      }
-
-      return body as T;
-    } catch (error) {
-      // Handle abort
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw createNetworkError(error);
-      }
-
-      // Re-throw FireberryError
-      if (error instanceof FireberryError) {
-        throw error;
-      }
-
-      // Wrap other errors
-      throw createNetworkError(error as Error);
-    }
-  }
-
-  /**
-   * Combines multiple abort signals into one
-   */
-  private combineSignals(signals: AbortSignal[]): AbortSignal {
-    const controller = new AbortController();
-
-    for (const signal of signals) {
-      if (signal.aborted) {
-        controller.abort();
-        break;
-      }
-      signal.addEventListener('abort', () => controller.abort(), { once: true });
-    }
-
-    return controller.signal;
+    );
   }
 }

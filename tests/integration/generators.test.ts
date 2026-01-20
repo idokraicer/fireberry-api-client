@@ -5,15 +5,15 @@ import { erdBuilder, generateFireberryERD } from '../../src/utils/erdGenerator';
 
 /**
  * Integration tests for Schema Generator and ERD Generator
- * These tests require a valid FIREBERRY_API_KEY environment variable
+ * These tests require a valid FIREBERRY_TOKEN environment variable
  */
 describe('Schema Generator (Integration)', () => {
   let client: FireberryClient;
 
   beforeAll(() => {
-    const apiKey = process.env.FIREBERRY_API_KEY;
+    const apiKey = process.env.FIREBERRY_TOKEN;
     if (!apiKey) {
-      throw new Error('FIREBERRY_API_KEY environment variable is required for integration tests');
+      throw new Error('FIREBERRY_TOKEN environment variable is required for integration tests');
     }
     client = new FireberryClient({ apiKey });
   });
@@ -122,9 +122,9 @@ describe('ERD Generator (Integration)', () => {
   let client: FireberryClient;
 
   beforeAll(() => {
-    const apiKey = process.env.FIREBERRY_API_KEY;
+    const apiKey = process.env.FIREBERRY_TOKEN;
     if (!apiKey) {
-      throw new Error('FIREBERRY_API_KEY environment variable is required for integration tests');
+      throw new Error('FIREBERRY_TOKEN environment variable is required for integration tests');
     }
     client = new FireberryClient({ apiKey });
   });
@@ -329,7 +329,7 @@ describe('Generators Error Handling', () => {
   });
 
   it('should handle empty include list', async () => {
-    const apiKey = process.env.FIREBERRY_API_KEY;
+    const apiKey = process.env.FIREBERRY_TOKEN;
     if (!apiKey) {
       return; // Skip if no API key
     }

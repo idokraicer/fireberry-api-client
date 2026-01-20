@@ -1,9 +1,25 @@
+import type { FireberrySDKClient } from './sdk';
+
 /**
  * Configuration options for FireberryClient
+ * Supports two modes:
+ * 1. API Key mode: Provide apiKey for direct HTTP API access
+ * 2. SDK mode: Provide sdk for iframe messaging (CRUD only, metadata requires apiKey)
+ * 3. Hybrid mode: Provide both sdk and apiKey (SDK for CRUD, API for metadata)
  */
 export interface FireberryClientConfig {
-  /** Fireberry API key */
-  apiKey: string;
+  /**
+   * Fireberry API key (required for API mode, optional for SDK mode)
+   * If using SDK mode without apiKey, metadata operations will not be available
+   */
+  apiKey?: string;
+
+  /**
+   * Fireberry SDK client instance (optional)
+   * When provided, CRUD operations will use SDK iframe messaging instead of HTTP
+   */
+  sdk?: FireberrySDKClient;
+
   /** Base URL for API requests (default: https://api.fireberry.com) */
   baseUrl?: string;
   /** Request timeout in milliseconds (default: 30000) */

@@ -129,7 +129,7 @@ npx vitest run tests/unit     # Unit tests only
 ```
 
 ### Integration Tests
-Require `FIREBERRY_API_KEY` in `.env`. Tests create/modify real records (cleaned up after).
+Require `FIREBERRY_TOKEN` in `.env`. Tests create/modify real records (cleaned up after).
 
 ## Code Patterns
 

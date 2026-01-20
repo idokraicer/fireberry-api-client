@@ -119,6 +119,25 @@ export type {
 // File upload types
 export type { FileUploadOptions, FileUploadResult } from './api/files';
 
+// Transport types
+export type {
+  Transport,
+  TransportRequestOptions,
+  HTTPTransportConfig,
+  SDKTransportConfig,
+  TransportConfig,
+} from './types/transport';
+export { isHTTPTransportConfig, isSDKTransportConfig } from './types/transport';
+
+// SDK types (for SDK mode usage)
+export type {
+  FireberrySDKClient,
+  FireberrySDKAPI,
+  SDKQueryPayload,
+  SDKResponseData,
+  SDKContext,
+} from './types/sdk';
+
 // Constants
 export {
   FIELD_TYPE_IDS,

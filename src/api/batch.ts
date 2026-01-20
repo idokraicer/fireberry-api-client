@@ -44,6 +44,7 @@ export class BatchAPI {
     options?: BatchCreateOptions,
   ): Promise<BatchResult> {
     const objectTypeStr = String(objectType);
+    const transport = this.client.getTransport();
     const batches = chunkArray(records, BATCH_SIZE);
     const allResponses: unknown[] = [];
 
@@ -53,20 +54,8 @@ export class BatchAPI {
         break;
       }
 
-      const response = await this.client.request<{ data?: unknown[] }>({
-        method: 'POST',
-        endpoint: `/api/v3/record/${objectTypeStr}/batch/create`,
-        body: { data: batch },
-        signal: options?.signal,
-      });
-
-      if (response.data) {
-        if (Array.isArray(response.data)) {
-          allResponses.push(...response.data);
-        } else {
-          allResponses.push(response.data);
-        }
-      }
+      const result = await transport.batchCreate(objectTypeStr, batch, options?.signal);
+      allResponses.push(...result.data);
     }
 
     // Smart cache invalidation
@@ -102,6 +91,7 @@ export class BatchAPI {
     options?: BatchUpdateOptions,
   ): Promise<BatchResult> {
     const objectTypeStr = String(objectType);
+    const transport = this.client.getTransport();
     const batches = chunkArray(records, BATCH_SIZE);
     const allResponses: unknown[] = [];
 
@@ -111,20 +101,8 @@ export class BatchAPI {
         break;
       }
 
-      const response = await this.client.request<{ data?: unknown[] }>({
-        method: 'POST',
-        endpoint: `/api/v3/record/${objectTypeStr}/batch/update`,
-        body: { data: batch },
-        signal: options?.signal,
-      });
-
-      if (response.data) {
-        if (Array.isArray(response.data)) {
-          allResponses.push(...response.data);
-        } else {
-          allResponses.push(response.data);
-        }
-      }
+      const result = await transport.batchUpdate(objectTypeStr, batch, options?.signal);
+      allResponses.push(...result.data);
     }
 
     // Smart cache invalidation
@@ -158,6 +136,7 @@ export class BatchAPI {
     options?: BatchDeleteOptions,
   ): Promise<BatchDeleteResult> {
     const objectTypeStr = String(objectType);
+    const transport = this.client.getTransport();
     const batches = chunkArray(recordIds, BATCH_SIZE);
     const allDeletedIds: string[] = [];
 
@@ -167,14 +146,8 @@ export class BatchAPI {
         break;
       }
 
-      await this.client.request({
-        method: 'POST',
-        endpoint: `/api/v3/record/${objectTypeStr}/batch/delete`,
-        body: { data: batch },
-        signal: options?.signal,
-      });
-
-      allDeletedIds.push(...batch);
+      const result = await transport.batchDelete(objectTypeStr, batch, options?.signal);
+      allDeletedIds.push(...result.ids);
     }
 
     // Smart cache invalidation
