@@ -97,7 +97,12 @@ export class SDKTransport implements Transport {
 
     // SDK returns data differently than HTTP API
     // We need to normalize the response
-    const records = Array.isArray(response.data) ? response.data : [response.data];
+    const pageData = Array.isArray(response.data) ? response.data : [response.data];
+
+    // Filter out empty/invalid records
+    const records = pageData.filter(
+      (record) => record && typeof record === 'object'
+    ) as Record<string, unknown>[];
 
     return {
       records,
