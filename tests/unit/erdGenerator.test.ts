@@ -5,7 +5,7 @@ import { FIELD_TYPE_IDS } from '../../src/constants/fieldTypes';
 
 describe('ERD Generator', () => {
   let client: FireberryClient;
-  let mockFetch: ReturnType<typeof vi.fn>;
+  let fetchSpy: ReturnType<typeof vi.fn>;
 
   // Metadata API responses use { success: true, data: [...] }
   const createMetadataResponse = (data: unknown, status = 200) => {
@@ -47,13 +47,13 @@ describe('ERD Generator', () => {
   ];
 
   beforeEach(() => {
-    mockFetch = vi.fn();
-    global.fetch = mockFetch;
+    fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
     client = new FireberryClient({ apiKey: 'test-key' });
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   describe('erdBuilder', () => {
@@ -63,7 +63,7 @@ describe('ERD Generator', () => {
     });
 
     it('should support fluent chaining', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse(mockObjects))
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -81,7 +81,7 @@ describe('ERD Generator', () => {
     });
 
     it('should generate ERD with correct Mermaid syntax', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -98,7 +98,7 @@ describe('ERD Generator', () => {
 
   describe('generateFireberryERD', () => {
     it('should generate ERD for all objects by default', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse(mockObjects))
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields))
         .mockReturnValueOnce(createMetadataResponse(mockContactFields))
@@ -113,7 +113,7 @@ describe('ERD Generator', () => {
     });
 
     it('should filter objects with include option', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse(mockObjects))
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -124,7 +124,7 @@ describe('ERD Generator', () => {
     });
 
     it('should filter objects with exclude option', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse(mockObjects))
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields))
         .mockReturnValueOnce(createMetadataResponse(mockContactFields));
@@ -136,7 +136,7 @@ describe('ERD Generator', () => {
     });
 
     it('should detect relationships between objects', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse(mockObjects))
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields))
         .mockReturnValueOnce(createMetadataResponse(mockContactFields))
@@ -164,7 +164,7 @@ describe('ERD Generator', () => {
     });
 
     it('should include relationship lines in Mermaid output', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse([mockObjects[0], mockObjects[1]]))
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields))
         .mockReturnValueOnce(createMetadataResponse(mockContactFields));
@@ -181,7 +181,7 @@ describe('ERD Generator', () => {
   describe('ERD Settings', () => {
     describe('includeFields', () => {
       it('should include fields when true (default)', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -195,7 +195,7 @@ describe('ERD Generator', () => {
       });
 
       it('should show empty entities when false', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -212,7 +212,7 @@ describe('ERD Generator', () => {
 
     describe('showFieldTypes', () => {
       it('should show field types when true (default)', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -229,7 +229,7 @@ describe('ERD Generator', () => {
       });
 
       it('should omit field types when false', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -245,7 +245,7 @@ describe('ERD Generator', () => {
 
     describe('onlyRelationshipFields', () => {
       it('should show all fields when false (default)', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -260,7 +260,7 @@ describe('ERD Generator', () => {
       });
 
       it('should only show lookup fields when true', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -277,7 +277,7 @@ describe('ERD Generator', () => {
 
     describe('maxFieldsPerEntity', () => {
       it('should show all fields when 0 (unlimited)', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -296,7 +296,7 @@ describe('ERD Generator', () => {
       });
 
       it('should limit fields and show indicator when exceeded', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -312,7 +312,7 @@ describe('ERD Generator', () => {
 
     describe('includeFieldLabels', () => {
       it('should not include labels by default', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -325,7 +325,7 @@ describe('ERD Generator', () => {
       });
 
       it('should include labels when true', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -341,7 +341,7 @@ describe('ERD Generator', () => {
 
     describe('title', () => {
       it('should use default title when not specified', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -354,7 +354,7 @@ describe('ERD Generator', () => {
       });
 
       it('should use custom title when specified', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -369,7 +369,7 @@ describe('ERD Generator', () => {
 
     describe('includeFrontmatter', () => {
       it('should include frontmatter by default', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -383,7 +383,7 @@ describe('ERD Generator', () => {
       });
 
       it('should omit frontmatter when false', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -399,7 +399,7 @@ describe('ERD Generator', () => {
 
     describe('useDisplayNames', () => {
       it('should use system names by default', async () => {
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -413,7 +413,7 @@ describe('ERD Generator', () => {
 
       it('should warn when using display names with unicode', async () => {
         const hebrewObject = { objectType: 1, name: 'חשבון', systemName: 'Account' };
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([hebrewObject]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -429,7 +429,7 @@ describe('ERD Generator', () => {
 
       it('should not warn when using system names', async () => {
         const hebrewObject = { objectType: 1, name: 'חשבון', systemName: 'Account' };
-        mockFetch
+        fetchSpy
           .mockReturnValueOnce(createMetadataResponse([hebrewObject]))
           .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -445,7 +445,7 @@ describe('ERD Generator', () => {
 
   describe('Result Structure', () => {
     it('should include objects array with correct structure', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -461,7 +461,7 @@ describe('ERD Generator', () => {
     });
 
     it('should include relationships array with correct structure', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse([mockObjects[0], mockObjects[1]]))
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields))
         .mockReturnValueOnce(createMetadataResponse(mockContactFields));
@@ -476,7 +476,7 @@ describe('ERD Generator', () => {
     });
 
     it('should include metadata with generation info', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -488,7 +488,7 @@ describe('ERD Generator', () => {
     });
 
     it('should include warnings array', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -501,7 +501,7 @@ describe('ERD Generator', () => {
 
   describe('Field Key Indicators', () => {
     it('should mark lookup fields as FK', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -516,7 +516,7 @@ describe('ERD Generator', () => {
 
   describe('Field Sorting', () => {
     it('should sort fields: name field first, then PK, then lookups', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -539,7 +539,7 @@ describe('ERD Generator', () => {
 
   describe('Edge Cases', () => {
     it('should handle empty objects list', async () => {
-      mockFetch.mockReturnValueOnce(createMetadataResponse([]));
+      fetchSpy.mockReturnValueOnce(createMetadataResponse([]));
 
       const result = await generateFireberryERD(client);
 
@@ -549,7 +549,7 @@ describe('ERD Generator', () => {
     });
 
     it('should handle objects with no fields', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse([mockObjects[0]]))
         .mockReturnValueOnce(createMetadataResponse([]));
 
@@ -564,7 +564,7 @@ describe('ERD Generator', () => {
 
     it('should handle relationships to objects not in include list', async () => {
       // Account has lookup to Contact, but Contact is not included
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse([mockObjects[0]])) // Only Account
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -579,7 +579,7 @@ describe('ERD Generator', () => {
       const specialFields = [
         { fieldName: 'field-name!', label: 'Field', systemFieldTypeId: 1 },
       ];
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse([specialObject]))
         .mockReturnValueOnce(createMetadataResponse(specialFields));
 
@@ -593,7 +593,7 @@ describe('ERD Generator', () => {
     });
 
     it('should handle string object type IDs', async () => {
-      mockFetch
+      fetchSpy
         .mockReturnValueOnce(createMetadataResponse(mockObjects))
         .mockReturnValueOnce(createMetadataResponse(mockAccountFields));
 
@@ -607,7 +607,7 @@ describe('ERD Generator', () => {
       const controller = new AbortController();
       controller.abort();
 
-      mockFetch.mockReturnValueOnce(createMetadataResponse(mockObjects));
+      fetchSpy.mockReturnValueOnce(createMetadataResponse(mockObjects));
 
       const result = await erdBuilder(client)
         .withSignal(controller.signal)

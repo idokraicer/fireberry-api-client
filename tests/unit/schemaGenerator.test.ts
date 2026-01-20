@@ -3,55 +3,57 @@ import { FireberryClient } from '../../src';
 import { generateSchema, schemaBuilder, SchemaBuilder } from '../../src/utils/schemaGenerator';
 import { FIELD_TYPE_IDS } from '../../src/constants/fieldTypes';
 
+// Mock fetch at module level
+const mockFetch = vi.fn();
+global.fetch = mockFetch;
+
+// Metadata API responses use { success: true, data: [...] }
+const createMetadataResponse = (data: unknown, status = 200) => {
+  return Promise.resolve({
+    ok: status >= 200 && status < 300,
+    status,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    json: () => Promise.resolve({ success: true, data }),
+  });
+};
+
+const mockObjects = [
+  { objectType: 1, name: 'Account', systemName: 'Account' },
+  { objectType: 2, name: 'Contact', systemName: 'Contact' },
+  { objectType: 1000, name: 'Custom Object', systemName: 'CustomObject1000' },
+];
+
+const mockAccountFields = [
+  { fieldName: 'accountid', label: 'Account ID', systemFieldTypeId: FIELD_TYPE_IDS.TEXT, fieldType: 'Text' },
+  { fieldName: 'accountname', label: 'Account Name', systemFieldTypeId: FIELD_TYPE_IDS.TEXT, fieldType: 'Text', required: true },
+  { fieldName: 'revenue', label: 'Revenue', systemFieldTypeId: FIELD_TYPE_IDS.NUMERIC, fieldType: 'Numeric' },
+  { fieldName: 'statuscode', label: 'Status', systemFieldTypeId: FIELD_TYPE_IDS.DROPDOWN, fieldType: 'Dropdown' },
+  { fieldName: 'primarycontactid', label: 'Primary Contact', systemFieldTypeId: FIELD_TYPE_IDS.LOOKUP, fieldType: 'Lookup', relatedObjectType: 2 },
+  { fieldName: 'createdon', label: 'Created On', systemFieldTypeId: FIELD_TYPE_IDS.DATE, fieldType: 'Date' },
+  { fieldName: 'modifiedon', label: 'Modified On', systemFieldTypeId: FIELD_TYPE_IDS.DATETIME, fieldType: 'DateTime' },
+  { fieldName: 'email', label: 'Email', systemFieldTypeId: FIELD_TYPE_IDS.EMAIL, fieldType: 'Email' },
+  { fieldName: 'website', label: 'Website', systemFieldTypeId: FIELD_TYPE_IDS.URL, fieldType: 'URL' },
+  { fieldName: 'phone', label: 'Phone', systemFieldTypeId: FIELD_TYPE_IDS.TELEPHONE, fieldType: 'Telephone' },
+  { fieldName: 'description', label: 'Description', systemFieldTypeId: FIELD_TYPE_IDS.LONG_TEXT, fieldType: 'Long Text' },
+  { fieldName: 'notes', label: 'Notes', systemFieldTypeId: FIELD_TYPE_IDS.HTML, fieldType: 'HTML' },
+];
+
+const mockContactFields = [
+  { fieldName: 'contactid', label: 'Contact ID', systemFieldTypeId: FIELD_TYPE_IDS.TEXT, fieldType: 'Text' },
+  { fieldName: 'fullname', label: 'Full Name', systemFieldTypeId: FIELD_TYPE_IDS.TEXT, fieldType: 'Text', required: true },
+  { fieldName: 'accountid', label: 'Account', systemFieldTypeId: FIELD_TYPE_IDS.LOOKUP, fieldType: 'Lookup', relatedObjectType: 1 },
+];
+
 describe('Schema Generator', () => {
   let client: FireberryClient;
-  let mockFetch: ReturnType<typeof vi.fn>;
-
-  // Metadata API responses use { success: true, data: [...] }
-  const createMetadataResponse = (data: unknown, status = 200) => {
-    return Promise.resolve({
-      ok: status >= 200 && status < 300,
-      status,
-      headers: new Headers({ 'content-type': 'application/json' }),
-      json: () => Promise.resolve({ success: true, data }),
-    });
-  };
-
-  const mockObjects = [
-    { objectType: 1, name: 'Account', systemName: 'Account' },
-    { objectType: 2, name: 'Contact', systemName: 'Contact' },
-    { objectType: 1000, name: 'Custom Object', systemName: 'CustomObject1000' },
-  ];
-
-  const mockAccountFields = [
-    { fieldName: 'accountid', label: 'Account ID', systemFieldTypeId: FIELD_TYPE_IDS.TEXT, fieldType: 'Text' },
-    { fieldName: 'accountname', label: 'Account Name', systemFieldTypeId: FIELD_TYPE_IDS.TEXT, fieldType: 'Text', required: true },
-    { fieldName: 'revenue', label: 'Revenue', systemFieldTypeId: FIELD_TYPE_IDS.NUMERIC, fieldType: 'Numeric' },
-    { fieldName: 'statuscode', label: 'Status', systemFieldTypeId: FIELD_TYPE_IDS.DROPDOWN, fieldType: 'Dropdown' },
-    { fieldName: 'primarycontactid', label: 'Primary Contact', systemFieldTypeId: FIELD_TYPE_IDS.LOOKUP, fieldType: 'Lookup', relatedObjectType: 2 },
-    { fieldName: 'createdon', label: 'Created On', systemFieldTypeId: FIELD_TYPE_IDS.DATE, fieldType: 'Date' },
-    { fieldName: 'modifiedon', label: 'Modified On', systemFieldTypeId: FIELD_TYPE_IDS.DATETIME, fieldType: 'DateTime' },
-    { fieldName: 'email', label: 'Email', systemFieldTypeId: FIELD_TYPE_IDS.EMAIL, fieldType: 'Email' },
-    { fieldName: 'website', label: 'Website', systemFieldTypeId: FIELD_TYPE_IDS.URL, fieldType: 'URL' },
-    { fieldName: 'phone', label: 'Phone', systemFieldTypeId: FIELD_TYPE_IDS.TELEPHONE, fieldType: 'Telephone' },
-    { fieldName: 'description', label: 'Description', systemFieldTypeId: FIELD_TYPE_IDS.LONG_TEXT, fieldType: 'Long Text' },
-    { fieldName: 'notes', label: 'Notes', systemFieldTypeId: FIELD_TYPE_IDS.HTML, fieldType: 'HTML' },
-  ];
-
-  const mockContactFields = [
-    { fieldName: 'contactid', label: 'Contact ID', systemFieldTypeId: FIELD_TYPE_IDS.TEXT, fieldType: 'Text' },
-    { fieldName: 'fullname', label: 'Full Name', systemFieldTypeId: FIELD_TYPE_IDS.TEXT, fieldType: 'Text', required: true },
-    { fieldName: 'accountid', label: 'Account', systemFieldTypeId: FIELD_TYPE_IDS.LOOKUP, fieldType: 'Lookup', relatedObjectType: 1 },
-  ];
 
   beforeEach(() => {
-    mockFetch = vi.fn();
-    global.fetch = mockFetch;
+    vi.clearAllMocks();
     client = new FireberryClient({ apiKey: 'test-key' });
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('generateSchema', () => {
