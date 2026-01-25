@@ -164,9 +164,30 @@ export class RecordsAPI {
       // Record exists - UPDATE
       const existingRecord = existingRecords[0];
       const idFieldName = getObjectIdFieldName(objectTypeStr);
-      const recordId = String(existingRecord[idFieldName]);
 
-      const updatedRecord = await this.update(objectTypeStr, recordId, data, options);
+      // Try to get the ID field value with exact casing first
+      let recordId = existingRecord[idFieldName];
+
+      // If not found, try case-insensitive lookup (for SDK compatibility)
+      if (recordId === undefined || recordId === null) {
+        const actualIdField = Object.keys(existingRecord).find(
+          (key) => key.toLowerCase() === idFieldName.toLowerCase(),
+        );
+
+        if (actualIdField) {
+          recordId = existingRecord[actualIdField];
+        }
+      }
+
+      // If still not found, throw descriptive error
+      if (recordId === undefined || recordId === null) {
+        throw new Error(
+          `Could not find ID field "${idFieldName}" in existing record. ` +
+            `Available fields: ${Object.keys(existingRecord).join(', ')}`,
+        );
+      }
+
+      const updatedRecord = await this.update(objectTypeStr, String(recordId), data, options);
 
       return {
         success: true,

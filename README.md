@@ -7,6 +7,7 @@ A standalone, framework-agnostic TypeScript/JavaScript client for the Fireberry 
 - Full TypeScript support with comprehensive type definitions
 - Zero runtime dependencies (uses native `fetch`)
 - Supports both ESM and CommonJS
+- **SDK integration** - works with `@fireberry/sdk` for iframe-based plugins and widgets
 - Automatic retry on rate limits (429)
 - Optional metadata and query result caching
 - Smart cache invalidation on mutations (auto-clears query cache when records are modified)
@@ -32,17 +33,19 @@ npm install fireberry-api-client@latest
 ### Import Paths
 
 ```typescript
-// Main export
+// Main export (supports both API and SDK modes)
 import { FireberryClient } from 'fireberry-api-client';
 
 // Utilities export
 import { getObjectIdFieldName } from 'fireberry-api-client/utils';
 
-// SDK adapter
-import { createSDKQueryBuilder } from 'fireberry-api-client/sdk';
+// SDK utilities (for standalone SDK usage)
+import { createSDKQueryBuilder, EnhancedSDK } from 'fireberry-api-client/sdk';
 ```
 
 ## Quick Start
+
+### With API Key (Node.js / External API)
 
 ```typescript
 import { FireberryClient } from 'fireberry-api-client';
@@ -61,18 +64,45 @@ const accounts = await client.query({
 console.log(accounts.records);
 ```
 
+### With SDK (Fireberry Plugins / Widgets)
+
+```typescript
+import FireberryClientSDK from '@fireberry/sdk/client';
+import { FireberryClient } from 'fireberry-api-client';
+
+// Initialize SDK
+const sdk = new FireberryClientSDK();
+await sdk.initializeContext();
+
+// Create client with SDK
+const client = new FireberryClient({ sdk });
+
+// Use all client features (CRUD via SDK messaging)
+const accounts = await client.queryBuilder()
+  .objectType(1)
+  .select('accountid', 'accountname')
+  .where('statuscode').equals('1')
+  .execute();
+```
+
 ## API Reference
 
 ### Client Configuration
 
 ```typescript
 const client = new FireberryClient({
-  apiKey: 'your-api-key',        // Required
+  // Authentication (at least one required)
+  apiKey: 'your-api-key',        // Optional, API key for HTTP API mode
+  sdk: sdkInstance,              // Optional, SDK instance for iframe mode
+
+  // HTTP Options (API mode only)
   baseUrl: 'https://api.fireberry.com', // Optional, default shown
   timeout: 30000,                // Optional, request timeout in ms
   retryOn429: true,              // Optional, auto-retry on rate limit
   maxRetries: 120,               // Optional, max retry attempts
   retryDelay: 1000,              // Optional, delay between retries in ms
+
+  // Caching Options
   cacheMetadata: false,          // Optional, enable metadata caching
   cacheTTL: 300000,              // Optional, metadata cache TTL in ms (5 min default)
   cacheQueryResults: false,      // Optional, enable query result caching
@@ -80,6 +110,12 @@ const client = new FireberryClient({
   invalidateCacheOnMutation: true, // Optional, auto-clear query cache on create/update/delete (default: true)
 });
 ```
+
+**Initialization Modes:**
+
+- **API-only mode**: Pass only `apiKey` - all operations use HTTP API
+- **SDK-only mode**: Pass only `sdk` - CRUD via iframe messaging (no metadata support)
+- **Hybrid mode**: Pass both `apiKey` and `sdk` - CRUD via SDK, metadata via API
 
 ### Query Records
 
@@ -484,23 +520,74 @@ const promise = client.query({
 controller.abort();
 ```
 
-## SDK Adapter (for @fireberry/sdk)
+## SDK Integration (for @fireberry/sdk)
 
-If you're building embedded Fireberry widgets/plugins using `@fireberry/sdk`, you can use this library's utilities with the SDK adapter:
+If you're building embedded Fireberry widgets/plugins using `@fireberry/sdk`, you can integrate it with this library in two ways:
+
+### Option 1: Direct SDK Integration with FireberryClient (Recommended)
+
+Pass the SDK instance directly to FireberryClient for seamless integration with all client features:
 
 ```typescript
 import FireberryClientSDK from '@fireberry/sdk/client';
-import { createSDKQueryBuilder, EnhancedSDK } from 'fireberry-api-client/sdk';
+import { FireberryClient } from 'fireberry-api-client';
 
 // Initialize Fireberry SDK (runs in iframe)
 const sdk = new FireberryClientSDK();
 await sdk.initializeContext();
+
+// Create client with SDK (CRUD via SDK, metadata requires apiKey)
+const client = new FireberryClient({
+  sdk: sdk,
+  // Optional: Add apiKey for metadata operations
+  // apiKey: 'your-api-key',
+});
+
+// Use all regular client features
+const accounts = await client.queryBuilder()
+  .objectType(1)
+  .select('accountid', 'accountname')
+  .where('statuscode').equals('1')
+  .execute();
+
+// CRUD operations work through SDK
+await client.records.create(1, { accountname: 'New Account' });
 ```
 
-### Option 1: Query Builder Factory
+**Three initialization modes:**
+
+1. **SDK-only mode** - CRUD operations only (no metadata):
+```typescript
+const client = new FireberryClient({ sdk });
+```
+
+2. **Hybrid mode** - SDK for CRUD, API for metadata (recommended):
+```typescript
+const client = new FireberryClient({
+  sdk,
+  apiKey: 'your-api-key',
+});
+```
+
+3. **API-only mode** - Traditional HTTP API:
+```typescript
+const client = new FireberryClient({
+  apiKey: 'your-api-key',
+});
+```
+
+### Option 2: Standalone SDK Utilities
+
+Use SDK-specific utilities from the `/sdk` export for more granular control:
+
+#### 2a. Query Builder Factory
 
 ```typescript
+import FireberryClientSDK from '@fireberry/sdk/client';
 import { createSDKQueryBuilder } from 'fireberry-api-client/sdk';
+
+const sdk = new FireberryClientSDK();
+await sdk.initializeContext();
 
 const queryBuilder = createSDKQueryBuilder(sdk);
 
@@ -513,7 +600,7 @@ const results = await queryBuilder(1) // 1 = Account
   .execute();
 ```
 
-### Option 2: Enhanced SDK Wrapper
+#### 2b. Enhanced SDK Wrapper
 
 ```typescript
 import { EnhancedSDK } from 'fireberry-api-client/sdk';
@@ -546,7 +633,7 @@ await enhanced.update(1, 'record-id', { accountname: 'Updated' });
 await enhanced.delete(1, 'record-id');
 ```
 
-### Option 3: Use QueryBuilder Directly
+#### 2c. Use QueryBuilder Directly
 
 ```typescript
 import { QueryBuilder } from 'fireberry-api-client';

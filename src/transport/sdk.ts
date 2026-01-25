@@ -96,13 +96,29 @@ export class SDKTransport implements Transport {
     }
 
     // SDK returns data differently than HTTP API
-    // We need to normalize the response
-    const pageData = Array.isArray(response.data) ? response.data : [response.data];
+    // We need to normalize the response structure
+    // The SDK response can be:
+    // 1. {Columns: [...], Data: [...]} - query response with metadata
+    // 2. An array of records
+    // 3. A single record object
+    let records: Record<string, unknown>[] = [];
 
-    // Filter out empty/invalid records
-    const records = pageData.filter(
-      (record) => record && typeof record === 'object'
-    ) as Record<string, unknown>[];
+    if (response.data && typeof response.data === 'object') {
+      // Check if it's a query response with Data property
+      if ('Data' in response.data && Array.isArray(response.data.Data)) {
+        records = response.data.Data as Record<string, unknown>[];
+      }
+      // Check if data itself is an array
+      else if (Array.isArray(response.data)) {
+        records = response.data.filter(
+          (record) => record && typeof record === 'object'
+        ) as Record<string, unknown>[];
+      }
+      // Otherwise treat as a single record (but this shouldn't happen for queries)
+      else if (!('Columns' in response.data)) {
+        records = [response.data as Record<string, unknown>];
+      }
+    }
 
     return {
       records,
@@ -326,12 +342,25 @@ export class SDKTransport implements Transport {
         );
       }
 
-      const pageData = Array.isArray(response.data) ? response.data : [response.data];
+      // Normalize SDK response structure (same logic as single page query)
+      let validRecords: Record<string, unknown>[] = [];
 
-      // Filter out empty/invalid records
-      const validRecords = pageData.filter(
-        (record) => record && typeof record === 'object'
-      ) as Record<string, unknown>[];
+      if (response.data && typeof response.data === 'object') {
+        // Check if it's a query response with Data property
+        if ('Data' in response.data && Array.isArray(response.data.Data)) {
+          validRecords = response.data.Data as Record<string, unknown>[];
+        }
+        // Check if data itself is an array
+        else if (Array.isArray(response.data)) {
+          validRecords = response.data.filter(
+            (record) => record && typeof record === 'object'
+          ) as Record<string, unknown>[];
+        }
+        // Otherwise treat as a single record (but this shouldn't happen for queries)
+        else if (!('Columns' in response.data)) {
+          validRecords = [response.data as Record<string, unknown>];
+        }
+      }
 
       allRecords.push(...validRecords);
 

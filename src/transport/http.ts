@@ -337,7 +337,8 @@ export class HTTPTransport implements Transport {
   }
 
   /**
-   * Executes a fetch request with retry logic for 429 errors
+   * Executes a fetch request with retry logic for 429 errors and timeouts
+   * Implements exponential backoff for timeout duration
    */
   private async executeWithRetry<T>(
     url: string,
@@ -345,11 +346,19 @@ export class HTTPTransport implements Transport {
     retryCount = 0
   ): Promise<T> {
     try {
+      // Calculate timeout with exponential backoff
+      // Start with base timeout, double on each retry, cap at 5 minutes (300000ms)
+      const maxTimeout = 300000; // 5 minutes
+      const currentTimeout = Math.min(
+        this.config.timeout * Math.pow(2, retryCount),
+        maxTimeout
+      );
+
       // Create timeout controller
       const timeoutController = new AbortController();
       const timeoutId = setTimeout(() => {
         timeoutController.abort();
-      }, this.config.timeout);
+      }, currentTimeout);
 
       // Combine signals if external signal provided
       const combinedSignal = options.signal
@@ -393,9 +402,24 @@ export class HTTPTransport implements Transport {
 
       return body as T;
     } catch (error) {
-      // Handle abort
+      // Handle abort/timeout
       if (error instanceof Error && error.name === 'AbortError') {
-        throw createNetworkError(error);
+        // Check if this was caused by external abort signal (user cancellation)
+        if (options.signal?.aborted) {
+          throw createNetworkError(error);
+        }
+
+        // Otherwise it's a timeout - treat as rate limit and retry if enabled
+        if (this.config.retryOn429 && retryCount < this.config.maxRetries) {
+          // Wait before retrying
+          await wait(this.config.retryDelay);
+          return this.executeWithRetry<T>(url, options, retryCount + 1);
+        }
+
+        throw new FireberryError('Request timeout after max retries', {
+          code: FireberryErrorCode.TIMEOUT,
+          context: { retryCount },
+        });
       }
 
       // Re-throw FireberryError
