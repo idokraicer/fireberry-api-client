@@ -6,9 +6,9 @@ import type {
   FireberryObject,
   FireberryField,
   FieldValue,
+  LookupRelationError,
 } from '../types/metadata';
 import { FIELD_TYPE_MAPPINGS, FIELD_TYPE_IDS } from '../constants/fieldTypes';
-import { EXCLUDED_LOOKUP_FIELDS } from '../constants/excludedFields';
 import { FireberryError, FireberryErrorCode } from '../errors';
 
 /** API endpoints used by MetadataAPI */
@@ -17,8 +17,12 @@ const ENDPOINTS = {
   FIELDS: (objectType: string) => `/metadata/records/${objectType}/fields`,
   FIELD_VALUES: (objectType: string, fieldName: string) =>
     `/metadata/records/${objectType}/fields/${fieldName}/values`,
-  QUERY: '/api/query',
+  FIELD: (objectType: string, fieldName: string) =>
+    `/metadata/records/${objectType}/fields/${encodeURIComponent(fieldName)}`,
 } as const;
+
+/** How many lookup-field metadata requests run at once */
+const LOOKUP_RELATION_CONCURRENCY = 5;
 
 /**
  * Metadata API for retrieving Fireberry schema information
@@ -157,6 +161,8 @@ export class MetadataAPI {
       fieldType: FIELD_TYPE_MAPPINGS[field.systemFieldTypeId] || field.systemFieldTypeId,
     }));
 
+    let lookupRelationErrors: LookupRelationError[] = [];
+
     // If requested, fetch related object types for lookup fields
     if (opts.includeLookupRelations) {
       const lookupFields = fields.filter(
@@ -164,16 +170,17 @@ export class MetadataAPI {
       );
 
       if (lookupFields.length > 0) {
-        const lookupRelations = await this.fetchLookupRelations(
+        const { relations, errors } = await this.fetchLookupRelations(
           objectTypeStr,
           lookupFields.map((f) => f.fieldName),
           opts.signal,
         );
+        lookupRelationErrors = errors;
 
         // Merge lookup relations into fields
         fields = fields.map((field) => ({
           ...field,
-          relatedObjectType: lookupRelations.get(field.fieldName),
+          relatedObjectType: relations.get(field.fieldName),
         }));
       }
     }
@@ -185,6 +192,13 @@ export class MetadataAPI {
       success: true,
     };
 
+    // A lookup read that failed is reported, and the partial result is not cached,
+    // so the next call tries again instead of serving a gap for the cache TTL.
+    if (lookupRelationErrors.length > 0) {
+      result.lookupRelationErrors = lookupRelationErrors;
+      return result;
+    }
+
     // Cache the result
     this.client.setCache('fields', objectTypeStr, result);
 
@@ -192,63 +206,54 @@ export class MetadataAPI {
   }
 
   /**
-   * Fetches related object types for lookup fields using the query endpoint.
-   * The query endpoint returns Columns metadata with fieldobjecttype even without records.
-   * Excludes fields that cause API errors (e.g., deletedby, deletedon).
+   * Fetches the related object type of each lookup field from its field metadata
+   * (`GET /metadata/records/{objectType}/fields/{fieldName}` returns `fieldObjectType`).
+   * The fields list endpoint does not carry it, so this costs one request per lookup field,
+   * run a few at a time; the transport retries 429 responses.
+   *
+   * A failed read leaves that field without `relatedObjectType` and is returned in `errors`.
+   * Cancellation is not swallowed: an aborted signal rejects the whole call.
    */
   private async fetchLookupRelations(
     objectType: string,
     lookupFieldNames: string[],
     signal?: AbortSignal,
-  ): Promise<Map<string, number>> {
+  ): Promise<{ relations: Map<string, number>; errors: LookupRelationError[] }> {
     const relations = new Map<string, number>();
+    const errors: LookupRelationError[] = [];
 
-    // Filter out excluded fields that cause API errors
-    const queryableFields = lookupFieldNames.filter(
-      (fieldName) => !EXCLUDED_LOOKUP_FIELDS.includes(fieldName),
-    );
-
-    if (queryableFields.length === 0) {
-      return relations;
-    }
-
-    try {
-      const response = await this.client.request<{
-        success: boolean;
-        data?: {
-          Columns?: Array<{
-            fieldname: string;
-            fieldobjecttype: number | null;
-          }>;
-        };
-      }>({
-        method: 'POST',
-        endpoint: ENDPOINTS.QUERY,
-        body: {
-          objecttype: objectType,
-          fields: queryableFields.join(','),
-          query: '',
-          page_size: 1,
-          page_number: 1,
-          show_real_value: 0,
-        },
-        signal,
-      });
-
-      // Extract fieldobjecttype from Columns metadata
-      const columns = response.data?.Columns || [];
-      for (const column of columns) {
-        if (column.fieldobjecttype !== null && column.fieldobjecttype !== undefined) {
-          relations.set(column.fieldname, column.fieldobjecttype);
+    const readOne = async (fieldName: string): Promise<void> => {
+      try {
+        const response = await this.client.request<{
+          success: boolean;
+          data?: { fieldObjectType?: string | number | null };
+        }>({
+          method: 'GET',
+          endpoint: ENDPOINTS.FIELD(objectType, fieldName),
+          signal,
+        });
+        const raw = response.data?.fieldObjectType;
+        const target = raw === null || raw === undefined || raw === '' ? NaN : Number(raw);
+        if (Number.isFinite(target)) {
+          relations.set(fieldName, target);
         }
+      } catch (error) {
+        if (signal?.aborted) {
+          throw error;
+        }
+        errors.push({
+          fieldName,
+          message: error instanceof Error ? error.message : String(error),
+          code: error instanceof FireberryError ? error.code : undefined,
+        });
       }
-    } catch (error) {
-      // If fetching lookup relations fails, return empty map
-      // This allows tests and edge cases to work without complete mocking
-      // Lookup fields will still be returned, just without relatedObjectType
+    };
+
+    for (let i = 0; i < lookupFieldNames.length; i += LOOKUP_RELATION_CONCURRENCY) {
+      await Promise.all(lookupFieldNames.slice(i, i + LOOKUP_RELATION_CONCURRENCY).map(readOne));
     }
 
-    return relations;
+    return { relations, errors };
   }
 
   /**
