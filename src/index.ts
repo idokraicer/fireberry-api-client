@@ -95,6 +95,7 @@ export type {
   FieldValue,
   GetObjectsResult,
   GetFieldsResult,
+  LookupRelationError,
   GetFieldValuesResult,
 } from './types/metadata';
 

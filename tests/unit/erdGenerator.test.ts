@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FireberryClient } from '../../src';
 import { erdBuilder, generateFireberryERD, ERDBuilder } from '../../src/utils/erdGenerator';
 import { FIELD_TYPE_IDS } from '../../src/constants/fieldTypes';
+import { withFieldMetadata } from '../support/fieldMetadataStub';
 
 describe('ERD Generator', () => {
   let client: FireberryClient;
@@ -48,7 +49,11 @@ describe('ERD Generator', () => {
 
   beforeEach(() => {
     fetchSpy = vi.fn();
-    vi.stubGlobal('fetch', fetchSpy);
+    // Lookup targets are read per field; answer those from the fixtures above
+    vi.stubGlobal(
+      'fetch',
+      withFieldMetadata(fetchSpy, [mockAccountFields, mockContactFields, mockOpportunityFields]),
+    );
     client = new FireberryClient({ apiKey: 'test-key' });
   });
 

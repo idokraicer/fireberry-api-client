@@ -75,6 +75,23 @@ export interface GetFieldsResult {
   total: number;
   /** Success flag */
   success: boolean;
+  /**
+   * Lookup fields whose related object type could not be read.
+   * Present only when at least one read failed; such results are not cached.
+   */
+  lookupRelationErrors?: LookupRelationError[];
+}
+
+/**
+ * A lookup field whose related object type could not be read by getFields
+ */
+export interface LookupRelationError {
+  /** The lookup field name */
+  fieldName: string;
+  /** Error message from the failed request */
+  message: string;
+  /** FireberryErrorCode, when the failure was a FireberryError */
+  code?: string;
 }
 
 /**

@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FireberryClient } from '../../src';
 import { generateSchema, schemaBuilder, SchemaBuilder } from '../../src/utils/schemaGenerator';
 import { FIELD_TYPE_IDS } from '../../src/constants/fieldTypes';
+import { withFieldMetadata } from '../support/fieldMetadataStub';
 
 // Mock fetch at module level
 const mockFetch = vi.fn();
-global.fetch = mockFetch;
 
 // Metadata API responses use { success: true, data: [...] }
 const createMetadataResponse = (data: unknown, status = 200) => {
@@ -43,6 +43,9 @@ const mockContactFields = [
   { fieldName: 'fullname', label: 'Full Name', systemFieldTypeId: FIELD_TYPE_IDS.TEXT, fieldType: 'Text', required: true },
   { fieldName: 'accountid', label: 'Account', systemFieldTypeId: FIELD_TYPE_IDS.LOOKUP, fieldType: 'Lookup', relatedObjectType: 1 },
 ];
+
+// Lookup targets are read per field; answer those from the fixtures below
+global.fetch = withFieldMetadata(mockFetch, [mockAccountFields, mockContactFields]) as typeof fetch;
 
 describe('Schema Generator', () => {
   let client: FireberryClient;

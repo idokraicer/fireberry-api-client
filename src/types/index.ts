@@ -40,6 +40,7 @@ export type {
   FieldValue,
   GetObjectsResult,
   GetFieldsResult,
+  LookupRelationError,
   GetFieldValuesResult,
 } from './metadata';
 
